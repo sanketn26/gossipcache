@@ -1,0 +1,166 @@
+# GossipCache Documentation
+
+Welcome to the GossipCache documentation. This directory contains comprehensive technical documentation, architecture diagrams, and deployment guides.
+
+## Documentation Structure
+
+### Core Documentation
+
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - High-level system architecture, design decisions, and component overview
+- **[TECHNICAL_SPEC.md](TECHNICAL_SPEC.md)** - Detailed technical specifications including data structures, protocols, APIs, and interfaces
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Deployment guides for EC2, Docker, and Kubernetes environments
+
+### Diagrams
+
+All diagrams use Mermaid format and can be viewed in any Markdown viewer that supports Mermaid (GitHub, VS Code, etc.).
+
+- **[diagrams/BACKED_MODE_SEQUENCES.md](diagrams/BACKED_MODE_SEQUENCES.md)** - Sequence diagrams for backed mode operations:
+  - Cache read/write flows
+  - Gossip change detection and pull mechanism
+  - Backing store failure handling
+  - Singleflight pattern
+  - Anti-entropy synchronization
+  - Node join/bootstrap process
+
+- **[diagrams/INDEPENDENT_MODE_SEQUENCES.md](diagrams/INDEPENDENT_MODE_SEQUENCES.md)** - Sequence diagrams for independent mode operations:
+  - Vector clock-based conflict detection
+  - Conflict resolution strategies (LWW, custom merge, siblings)
+  - Network partition and healing
+  - Data propagation via gossip
+  - TTL expiration and tombstones
+
+- **[diagrams/COMPONENT_DIAGRAMS.md](diagrams/COMPONENT_DIAGRAMS.md)** - Component interaction diagrams:
+  - Read/write operation flows
+  - Gossip message processing
+  - Anti-entropy synchronization
+  - Node join and failure detection
+  - Memory management and eviction
+  - Health check flows
+
+## Quick Navigation
+
+### By Role
+
+**For Architects:**
+- Start with [ARCHITECTURE.md](ARCHITECTURE.md) for system overview
+- Review design decisions and trade-offs
+- Understand consistency models
+
+**For Developers:**
+- Read [TECHNICAL_SPEC.md](TECHNICAL_SPEC.md) for API and interface details
+- Review data structures and protocols
+- Check sequence diagrams for implementation flows
+
+**For DevOps/SRE:**
+- Read [DEPLOYMENT.md](DEPLOYMENT.md) for deployment guides
+- Review monitoring and observability sections
+- Check troubleshooting guides
+
+### By Topic
+
+**Operating Modes:**
+- Backed Mode: [Architecture](ARCHITECTURE.md#backed-mode), [Sequences](diagrams/BACKED_MODE_SEQUENCES.md), [Deployment](DEPLOYMENT.md#backed-mode-with-elasticache-redis)
+- Independent Mode: [Architecture](ARCHITECTURE.md#independent-mode), [Sequences](diagrams/INDEPENDENT_MODE_SEQUENCES.md), [Deployment](DEPLOYMENT.md#independent-mode-no-backing-store)
+
+**Gossip Protocol:**
+- [Protocol Overview](ARCHITECTURE.md#51-gossip-protocol)
+- [Message Specifications](TECHNICAL_SPEC.md#5-protocol-specifications)
+- [Backed Mode Gossip](diagrams/BACKED_MODE_SEQUENCES.md#5-gossip-change-detection--pull)
+- [Independent Mode Gossip](diagrams/INDEPENDENT_MODE_SEQUENCES.md#4-gossip-data-propagation-no-conflicts)
+
+**Conflict Resolution:**
+- [Design Decisions](ARCHITECTURE.md#53-conflict-resolution-independent-mode)
+- [Technical Spec](TECHNICAL_SPEC.md#53-conflict-resolution-independent-mode)
+- [Sequence Diagrams](diagrams/INDEPENDENT_MODE_SEQUENCES.md#6-conflict-resolution-strategies)
+
+**Deployment:**
+- [EC2 Deployment](DEPLOYMENT.md#ec2-deployment)
+- [Docker Deployment](DEPLOYMENT.md#docker-deployment)
+- [Kubernetes Deployment](DEPLOYMENT.md#kubernetes-deployment)
+
+**Monitoring:**
+- [Observability](ARCHITECTURE.md#monitoring--observability)
+- [Metrics](TECHNICAL_SPEC.md#101-metrics-prometheus-format)
+- [Operations](DEPLOYMENT.md#monitoring--operations)
+
+## Key Concepts
+
+### Core Philosophy
+
+> **Caches must be local.** If accessing a cache requires a network call, you're just pushing the problem elsewhere.
+
+GossipCache provides microsecond-level local cache access while maintaining eventual consistency across nodes via gossip protocol.
+
+### Performance Targets
+
+- **Local cache access**: < 1ms (memory speed)
+- **Cache hit**: No network call required
+- **Performance gain**: 100-1000x faster than direct database access
+
+### Operating Modes
+
+**Backed Mode:**
+- Metadata-only gossip (minimal bandwidth)
+- Pull data from backing store on change detection
+- Redis/Valkey/Postgres/MySQL support
+- Backing store is source of truth
+
+**Independent Mode:**
+- Full-data gossip (includes values)
+- No external dependencies
+- Vector clock-based conflict resolution
+- Suitable for ephemeral data
+
+## Mermaid Diagram Support
+
+All sequence diagrams in this documentation use Mermaid syntax. To view them:
+
+### In GitHub
+Diagrams render automatically in GitHub's Markdown viewer.
+
+### In VS Code
+Install the "Markdown Preview Mermaid Support" extension.
+
+### In Other Tools
+Use any Markdown viewer with Mermaid support, or copy diagrams to [mermaid.live](https://mermaid.live) for rendering.
+
+## Contributing to Documentation
+
+When adding new documentation:
+
+1. **Place files appropriately:**
+   - High-level docs: `docs/` root
+   - Diagrams: `docs/diagrams/`
+
+2. **Use consistent formatting:**
+   - Follow existing structure
+   - Include table of contents for long docs
+   - Use Mermaid for all diagrams
+
+3. **Link liberally:**
+   - Cross-reference related sections
+   - Link to code when relevant
+   - Keep navigation easy
+
+4. **Update this README:**
+   - Add new documents to structure
+   - Update quick navigation if needed
+
+## Additional Resources
+
+- **Main README**: [../README.md](../README.md)
+- **CLAUDE.md**: [../CLAUDE.md](../CLAUDE.md) - Guidance for AI assistants
+- **GitHub Repository**: https://github.com/yourorg/gossipcache
+- **Documentation Site**: https://docs.gossipcache.io (coming soon)
+
+## Feedback
+
+Found an issue with the documentation? Have a suggestion?
+
+- Open an issue: https://github.com/yourorg/gossipcache/issues
+- Discuss: https://github.com/yourorg/gossipcache/discussions
+
+---
+
+**Last Updated**: 2025-01-30
+**Version**: 0.1.0
