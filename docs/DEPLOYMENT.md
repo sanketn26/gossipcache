@@ -126,7 +126,7 @@ aws ec2 run-instances \
 # install-gossipcache.sh
 
 # Install GossipCache
-wget https://github.com/yourorg/gossipcache/releases/download/v0.1.0/gossipcache-linux-amd64
+wget https://github.com/sanketn26/gossipcache/releases/download/v0.1.0/gossipcache-linux-amd64
 chmod +x gossipcache-linux-amd64
 mv gossipcache-linux-amd64 /usr/local/bin/gossipcache
 
@@ -1004,6 +1004,6 @@ logging:
 ### Support
 
 For issues and questions:
-- GitHub Issues: https://github.com/yourorg/gossipcache/issues
-- Discussions: https://github.com/yourorg/gossipcache/discussions
+- GitHub Issues: https://github.com/sanketn26/gossipcache/issues
+- Discussions: https://github.com/sanketn26/gossipcache/discussions
 - Docs: https://docs.gossipcache.io

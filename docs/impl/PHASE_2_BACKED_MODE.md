@@ -142,7 +142,7 @@ import (
     "time"
 
     "github.com/redis/go-redis/v9"
-    "github.com/yourorg/gossipcache/internal/backingstore"
+    "github.com/sanketn26/gossipcache/internal/backingstore"
 )
 
 // RedisStore implements BackingStore using Redis
@@ -325,7 +325,7 @@ import (
     "testing"
 
     "github.com/stretchr/testify/require"
-    "github.com/yourorg/gossipcache/internal/backingstore"
+    "github.com/sanketn26/gossipcache/internal/backingstore"
 )
 
 func TestRedisStore_GetSet(t *testing.T) {
@@ -526,7 +526,7 @@ import (
     "net"
     "sync"
 
-    "github.com/yourorg/gossipcache/internal/gossip"
+    "github.com/sanketn26/gossipcache/internal/gossip"
 )
 
 const (
@@ -1261,9 +1261,9 @@ import (
     "sync"
     "time"
 
-    "github.com/yourorg/gossipcache/internal/backingstore"
-    "github.com/yourorg/gossipcache/internal/network"
-    "github.com/yourorg/gossipcache/internal/storage"
+    "github.com/sanketn26/gossipcache/internal/backingstore"
+    "github.com/sanketn26/gossipcache/internal/network"
+    "github.com/sanketn26/gossipcache/internal/storage"
 )
 
 // Engine implements the gossip protocol
@@ -1469,9 +1469,22 @@ func (e *Engine) performAntiEntropy() {
     ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
     defer cancel()
 
-    // TODO: Implement merkle tree comparison
-    _ = ctx
-    _ = peer
+    tree, err := e.buildMerkleTree(ctx)
+    if err != nil {
+        logger.Warn("failed to build merkle tree", "error", err)
+        return
+    }
+
+    req := &AntiEntropyRequest{
+        NodeID:     e.nodeID,
+        MerkleRoot: tree.RootHash(),
+        KeyCount:   tree.KeyCount(),
+        RequestID:  e.newRequestID(),
+    }
+
+    if err := e.transport.SendTCP(ctx, peer.Address, req); err != nil {
+        logger.Warn("anti-entropy request failed", "peer", peer.NodeID, "error", err)
+    }
 }
 
 func (e *Engine) handleJoinRequest(msg Message, from net.Addr) error {
@@ -1484,12 +1497,70 @@ func (e *Engine) handleJoinRequest(msg Message, from net.Addr) error {
     // Add to peers
     e.peers.AddPeer(joinReq.NodeID, joinReq.Address)
 
-    // Send join ack with peer list
-    // TODO: Implement JoinAck response
+    ack := &JoinAck{
+        ClusterID:    e.config.ClusterID,
+        Peers:        e.peers.GetAliveNodeInfo(),
+        GossipConfig: e.config.PublicGossipConfig(),
+    }
 
-    return nil
+    return e.transport.SendTCP(context.Background(), joinReq.Address, ack)
 }
 ```
+
+#### 5.5 Merkle Tree Comparison
+
+```go
+// internal/gossip/merkle.go
+package gossip
+
+import (
+    "crypto/sha256"
+    "fmt"
+    "sort"
+)
+
+type MerkleTree struct {
+    leaves []MerkleLeaf
+    root   []byte
+}
+
+type MerkleLeaf struct {
+    Key     string
+    Version int64
+    Hash    []byte
+}
+
+func BuildMerkleTree(entries []MerkleLeaf) *MerkleTree {
+    sort.Slice(entries, func(i, j int) bool {
+        return entries[i].Key < entries[j].Key
+    })
+
+    hashes := make([][]byte, 0, len(entries))
+    for _, entry := range entries {
+        sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%d", entry.Key, entry.Version)))
+        hashes = append(hashes, sum[:])
+    }
+
+    return &MerkleTree{
+        leaves: entries,
+        root:   buildMerkleRoot(hashes),
+    }
+}
+
+func (m *MerkleTree) RootHash() []byte {
+    return append([]byte(nil), m.root...)
+}
+
+func (m *MerkleTree) KeyCount() int {
+    return len(m.leaves)
+}
+```
+
+Anti-entropy handling:
+- If Merkle roots match, return success without transferring keys.
+- If roots differ, exchange subtree hashes to narrow the differing key ranges.
+- Pull differing keys from the backing store in backed mode, then update local storage.
+- Track anti-entropy request latency, differing-key count, and repair errors in metrics.
 
 ### Step 6: Integrate with Cache Manager (Day 14-16)
 
@@ -1503,10 +1574,10 @@ import (
     "context"
     "time"
 
-    "github.com/yourorg/gossipcache/internal/backingstore"
-    "github.com/yourorg/gossipcache/internal/gossip"
-    "github.com/yourorg/gossipcache/internal/storage"
-    "github.com/yourorg/gossipcache/internal/util"
+    "github.com/sanketn26/gossipcache/internal/backingstore"
+    "github.com/sanketn26/gossipcache/internal/gossip"
+    "github.com/sanketn26/gossipcache/internal/storage"
+    "github.com/sanketn26/gossipcache/internal/util"
 )
 
 // BackedCache implements Cache with backing store support

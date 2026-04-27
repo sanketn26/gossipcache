@@ -21,7 +21,7 @@ import (
     "fmt"
 
     _ "github.com/go-sql-driver/mysql"
-    "github.com/yourorg/gossipcache/internal/backingstore"
+    "github.com/sanketn26/gossipcache/internal/backingstore"
 )
 
 type MySQLStore struct {
@@ -501,7 +501,7 @@ After completing Phase 4 + Addendum:
 
 ## Optional: Phase 4.5 - Security (Future)
 
-If security is required before launch, add Phase 4.5:
+If security is required before launch, use [Phase 4.5 Security](PHASE_4_5_SECURITY.md):
 
 ### Objectives
 - [ ] TLS for gossip protocol

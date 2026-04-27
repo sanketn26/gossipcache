@@ -99,11 +99,13 @@ This directory contains detailed, phased implementation plans for building Gossi
 ## Implementation Documents
 
 ### Core Phase Plans
+- **[IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md)** - Hands-on build guide with implementation order, checkpoints, design prompts, and code examples
 - **[PHASE_1_FOUNDATION.md](PHASE_1_FOUNDATION.md)** - Core foundation and local cache
 - **[PHASE_2_BACKED_MODE.md](PHASE_2_BACKED_MODE.md)** - Backed mode with metadata gossip
   - ✨ **Updated**: Now includes connection pooling and backpressure handling (Step 4.5)
 - **[PHASE_3_INDEPENDENT_MODE.md](PHASE_3_INDEPENDENT_MODE.md)** - Independent mode with vector clocks
 - **[PHASE_4_PRODUCTION.md](PHASE_4_PRODUCTION.md)** - Production features and deployment
+- **[PHASE_4_5_SECURITY.md](PHASE_4_5_SECURITY.md)** - Optional security hardening
 - **[PHASE_4_ADDENDUM.md](PHASE_4_ADDENDUM.md)** - ✨ **NEW**: Additional production features
   - MySQL backing store
   - DNS-based discovery
@@ -156,7 +158,7 @@ A comprehensive review identified **15 gaps** between design docs and implementa
 - After: **95% coverage** for MVP launch
 
 **Remaining Gaps** (Deferred to v2/Future):
-- Security features (TLS, mTLS, authentication) - Low priority
+- Security features (TLS, mTLS, authentication) - captured in optional [Phase 4.5](PHASE_4_5_SECURITY.md)
 - MongoDB backing store - Low priority
 - Distributed tracing - Low priority
 - Advanced operations (rebalancing, backup/restore) - Low priority
@@ -228,11 +230,10 @@ main (stable)
 
 ```bash
 # Clone repository
-git clone https://github.com/yourorg/gossipcache.git
+git clone https://github.com/sanketn26/gossipcache.git
 cd gossipcache
 
-# Initialize Go module
-go mod init github.com/yourorg/gossipcache
+# Install module dependencies
 go mod tidy
 
 # Create initial package structure (see PACKAGE_STRUCTURE.md)

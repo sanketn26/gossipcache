@@ -240,8 +240,8 @@ func Merge(local, remote VectorClock) VectorClock {
 package conflict
 
 import (
-    "github.com/yourorg/gossipcache/internal/storage"
-    "github.com/yourorg/gossipcache/internal/vclock"
+    "github.com/sanketn26/gossipcache/internal/storage"
+    "github.com/sanketn26/gossipcache/internal/vclock"
 )
 
 // Resolver defines the interface for conflict resolution
@@ -285,7 +285,7 @@ type MergeFunc func(local, remote []byte) ([]byte, error)
 package conflict
 
 import (
-    "github.com/yourorg/gossipcache/internal/vclock"
+    "github.com/sanketn26/gossipcache/internal/vclock"
 )
 
 // LWWResolver implements last-write-wins conflict resolution
@@ -316,7 +316,7 @@ func (r *LWWResolver) Resolve(local, remote *VersionedEntry) (*VersionedEntry, e
 package gossip
 
 import (
-    "github.com/yourorg/gossipcache/internal/vclock"
+    "github.com/sanketn26/gossipcache/internal/vclock"
 )
 
 // DataUpdate carries full data for independent mode
@@ -369,9 +369,9 @@ package gossip
 import (
     "context"
 
-    "github.com/yourorg/gossipcache/internal/conflict"
-    "github.com/yourorg/gossipcache/internal/storage"
-    "github.com/yourorg/gossipcache/internal/vclock"
+    "github.com/sanketn26/gossipcache/internal/conflict"
+    "github.com/sanketn26/gossipcache/internal/storage"
+    "github.com/sanketn26/gossipcache/internal/vclock"
 )
 
 // IndependentEngine implements gossip for independent mode

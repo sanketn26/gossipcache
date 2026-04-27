@@ -295,6 +295,42 @@ go test ./test/integration/
 docker-compose -f test/docker-compose.yml down
 ```
 
+### Gap Closure Tests
+
+The implementation-plan review added several production features that need explicit tests:
+
+```go
+// internal/network/pool_test.go
+func TestConnectionPool_RespectsMaxConnections(t *testing.T) {
+    pool := NewConnectionPool(2, time.Second)
+    defer pool.Close()
+
+    // Verify connections are reused and excess idle connections are closed.
+}
+
+// internal/gossip/queue_test.go
+func TestGossipQueue_Backpressure(t *testing.T) {
+    queue := NewGossipQueue(1)
+    require.NoError(t, queue.Enqueue(context.Background(), &QueuedMessage{Target: "peer-1"}))
+
+    err := queue.Enqueue(context.Background(), &QueuedMessage{Target: "peer-2"})
+    assert.ErrorIs(t, err, ErrQueueFull)
+    assert.Equal(t, int64(1), queue.Dropped())
+}
+
+// internal/discovery/dns_discovery_test.go
+func TestDNSDiscovery_FallsBackToARecords(t *testing.T) {
+    // Use an injected resolver or local fake DNS server so this test is deterministic.
+}
+
+// internal/api/debug_test.go
+func TestDebugEndpoints_RequireExplicitEnablement(t *testing.T) {
+    // Verify /debug/* endpoints are absent or unauthorized unless debug config is enabled.
+}
+```
+
+Security tests from [Phase 4.5](PHASE_4_5_SECURITY.md) should cover TLS trust, mTLS rejection, HMAC validation, API authentication, and rate limiting.
+
 ---
 
 ## 3. Benchmark Tests

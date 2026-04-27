@@ -76,8 +76,9 @@ gossipcache/
 #### 1.1 Initialize Project
 
 ```bash
-# Initialize Go module
-go mod init github.com/yourorg/gossipcache
+# Go module is already initialized as github.com/sanketn26/gossipcache.
+# For a fresh scaffold, run this only if go.mod does not exist:
+# go mod init github.com/sanketn26/gossipcache
 
 # Create directory structure
 mkdir -p cmd/gossipcache
@@ -570,7 +571,7 @@ import (
     "hash/fnv"
     "sync"
 
-    "github.com/yourorg/gossipcache/internal/storage"
+    "github.com/sanketn26/gossipcache/internal/storage"
 )
 
 const defaultShards = 256
@@ -675,7 +676,7 @@ import (
     "sync/atomic"
     "time"
 
-    "github.com/yourorg/gossipcache/internal/storage"
+    "github.com/sanketn26/gossipcache/internal/storage"
 )
 
 // MemoryStorage implements in-memory cache storage
@@ -995,8 +996,8 @@ import (
     "context"
     "time"
 
-    "github.com/yourorg/gossipcache/internal/storage"
-    "github.com/yourorg/gossipcache/pkg/gossipcache"
+    "github.com/sanketn26/gossipcache/internal/storage"
+    "github.com/sanketn26/gossipcache/pkg/gossipcache"
 )
 
 // Manager implements the Cache interface
@@ -1230,10 +1231,10 @@ import (
     "os/signal"
     "syscall"
 
-    "github.com/yourorg/gossipcache/internal/cache"
-    "github.com/yourorg/gossipcache/internal/config"
-    "github.com/yourorg/gossipcache/internal/observability"
-    "github.com/yourorg/gossipcache/internal/storage/memory"
+    "github.com/sanketn26/gossipcache/internal/cache"
+    "github.com/sanketn26/gossipcache/internal/config"
+    "github.com/sanketn26/gossipcache/internal/observability"
+    "github.com/sanketn26/gossipcache/internal/storage/memory"
 )
 
 func main() {

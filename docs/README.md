@@ -9,6 +9,9 @@ Welcome to the GossipCache documentation. This directory contains comprehensive 
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - High-level system architecture, design decisions, and component overview
 - **[TECHNICAL_SPEC.md](TECHNICAL_SPEC.md)** - Detailed technical specifications including data structures, protocols, APIs, and interfaces
 - **[DEPLOYMENT.md](DEPLOYMENT.md)** - Deployment guides for EC2, Docker, and Kubernetes environments
+- **[impl/README.md](impl/README.md)** - Phased implementation plan, package structure, gap analysis, and testing strategy
+- **[impl/IMPLEMENTATION_GUIDE.md](impl/IMPLEMENTATION_GUIDE.md)** - Hands-on implementation steps with code examples and checkpoints
+- **[impl/PHASE_4_5_SECURITY.md](impl/PHASE_4_5_SECURITY.md)** - Optional security hardening plan for untrusted network deployments
 
 ### Diagrams
 
@@ -150,15 +153,15 @@ When adding new documentation:
 
 - **Main README**: [../README.md](../README.md)
 - **CLAUDE.md**: [../CLAUDE.md](../CLAUDE.md) - Guidance for AI assistants
-- **GitHub Repository**: https://github.com/yourorg/gossipcache
+- **GitHub Repository**: https://github.com/sanketn26/gossipcache
 - **Documentation Site**: https://docs.gossipcache.io (coming soon)
 
 ## Feedback
 
 Found an issue with the documentation? Have a suggestion?
 
-- Open an issue: https://github.com/yourorg/gossipcache/issues
-- Discuss: https://github.com/yourorg/gossipcache/discussions
+- Open an issue: https://github.com/sanketn26/gossipcache/issues
+- Discuss: https://github.com/sanketn26/gossipcache/discussions
 
 ---
 

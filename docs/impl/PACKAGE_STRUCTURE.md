@@ -52,11 +52,14 @@ gossipcache/
 │   ├── network/
 │   │   ├── transport.go              # TCP/UDP transport
 │   │   ├── codec.go                  # Message encoding/decoding
+│   │   └── pool.go                   # TCP connection pooling
+│   ├── discovery/
 │   │   ├── discovery.go              # Discovery interface
 │   │   ├── static_discovery.go       # Static peers
 │   │   ├── ec2_discovery.go          # EC2 discovery
 │   │   ├── docker_discovery.go       # Docker discovery
-│   │   └── k8s_discovery.go          # Kubernetes discovery
+│   │   ├── k8s_discovery.go          # Kubernetes discovery
+│   │   └── dns_discovery.go          # DNS SRV/A discovery
 │   ├── vclock/
 │   │   ├── vclock.go                 # Vector clock
 │   │   ├── comparator.go             # Clock comparison
@@ -73,6 +76,7 @@ gossipcache/
 │   ├── observability/
 │   │   ├── logger.go                 # Structured logging
 │   │   ├── metrics.go                # Prometheus metrics
+│   │   ├── health.go                 # Health and readiness checks
 │   │   └── tracing.go                # OpenTelemetry (optional)
 │   ├── api/
 │   │   ├── server.go                 # HTTP server
@@ -185,8 +189,15 @@ gossipcache/
 **Responsibilities**:
 - TCP/UDP transport
 - Message encoding/decoding
-- Node discovery
 - Connection management
+
+### `internal/discovery`
+**Purpose**: Peer discovery
+**Responsibilities**:
+- Static peer lists
+- EC2, Docker, Kubernetes, and DNS discovery
+- Node registration/deregistration where the provider supports it
+- Watch/update peer sets for the gossip engine
 
 ### `internal/vclock`
 **Purpose**: Vector clock implementation
@@ -297,10 +308,11 @@ test/helpers/
 
 ```go
 import (
-    "github.com/yourorg/gossipcache/pkg/gossipcache"
-    "github.com/yourorg/gossipcache/internal/cache"
-    "github.com/yourorg/gossipcache/internal/storage/memory"
-    "github.com/yourorg/gossipcache/internal/backingstore/redis"
+    "github.com/sanketn26/gossipcache/pkg/gossipcache"
+    "github.com/sanketn26/gossipcache/internal/cache"
+    "github.com/sanketn26/gossipcache/internal/storage/memory"
+    "github.com/sanketn26/gossipcache/internal/backingstore/redis"
+    "github.com/sanketn26/gossipcache/internal/discovery"
 )
 ```
 

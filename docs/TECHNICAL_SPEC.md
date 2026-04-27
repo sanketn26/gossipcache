@@ -163,7 +163,7 @@ type Config struct {
     UDPPort int
 
     // Discovery
-    DiscoveryMode DiscoveryMode // EC2, Docker, K8s, Static
+    DiscoveryMode DiscoveryMode // Static, EC2, Docker, K8s, DNS
     DiscoveryConfig interface{}
 
     // Timeouts
@@ -192,6 +192,22 @@ type BackingStoreConfig struct {
     Username string
     Password string
     PoolSize int
+}
+
+type DiscoveryMode int
+const (
+    DiscoveryStatic DiscoveryMode = iota
+    DiscoveryEC2
+    DiscoveryDocker
+    DiscoveryKubernetes
+    DiscoveryDNS
+)
+
+type DNSDiscoveryConfig struct {
+    ServiceName string // e.g., "gossipcache"
+    Domain      string // e.g., "default.svc.cluster.local"
+    Port        int
+    Interval    time.Duration
 }
 
 type BackingStoreType int
@@ -638,6 +654,10 @@ type AuthConfig struct {
 - Role-based access control
 - Namespace isolation
 
+### 9.4 Implementation Plan
+
+Security hardening is captured as optional [Phase 4.5](impl/PHASE_4_5_SECURITY.md). It includes TLS/mTLS, shared-secret authentication, HTTP API authentication, rate limiting, and rotation runbooks.
+
 ## 10. Observability
 
 ### 10.1 Metrics (Prometheus Format)
@@ -679,6 +699,17 @@ logger.Info("gossip_sent",
 ### 10.3 Tracing (Optional)
 
 OpenTelemetry integration for distributed tracing.
+
+### 10.4 Debug and Profiling Endpoints
+
+Production builds should support configurable operational endpoints:
+
+- `/debug/peers` for peer membership state
+- `/debug/gossip` for gossip queue and protocol counters
+- `/debug/cache` for bounded cache samples
+- `/debug/pprof/*` for CPU, heap, goroutine, and trace profiling
+
+These endpoints must be disabled by default or bound only to trusted interfaces.
 
 ## 11. Testing Strategy
 
