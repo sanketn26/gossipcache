@@ -1,4 +1,4 @@
-.PHONY: help build test lint run clean deps tidy update fmt vet coverage bench install proto docker-build docker-run all profile-cpu profile-mem profile-block profile-trace
+.PHONY: help all build build-all run test test-short coverage coverage-report bench benchmark profile-cpu profile-mem profile-block profile-trace profile-all profile-clean lint fmt vet tidy update deps verify clean install install-lint install-tools docker-build docker-run watch version mod-graph list-deps check
 
 # Variables
 BINARY_NAME=gossipcache
@@ -82,6 +82,9 @@ coverage-report: coverage
 bench:
 	@echo "$(CYAN)Running benchmarks...$(NC)"
 	@$(GO) test -bench=. -benchmem ./...
+
+## benchmark: Run benchmark tests
+benchmark: bench
 
 ## profile-cpu: Run CPU profiling
 profile-cpu:

@@ -12,10 +12,10 @@ Phase 1 establishes the architectural foundation for GossipCache. We'll create c
 
 ## Objectives
 
-- [ ] Project structure and build system
+- [x] Project structure and build system
 - [ ] Core interfaces following SOLID principles
 - [ ] Configuration management system
-- [ ] Logging and observability foundation
+- [ ] Logging and Prometheus observability foundation
 - [ ] Local storage engine with concurrency control
 - [ ] Basic cache operations (Get, Set, Delete, GetMulti, SetMulti)
 - [ ] TTL and expiration handling
@@ -70,6 +70,10 @@ gossipcache/
 ```
 
 ## Implementation Steps
+
+### Phase 1 TDD Rhythm
+
+For each subsection below, write the listed test before the production file. Run the narrow package command after every passing test, then run `make test-short` at the end of each day. A slice is complete only when the test fails for the expected reason first, then passes with the smallest implementation.
 
 ### Step 1: Project Setup (Day 1-2)
 
@@ -497,9 +501,11 @@ func Validate(cfg *Config) error {
 }
 ```
 
-### Step 4: Logging Foundation (Day 4)
+### Step 4: Logging and Prometheus Observability Foundation (Day 4)
 
 **SOLID Principle**: Dependency Inversion - Depend on logger interface, not concrete implementation
+
+Start with structured logging and a small Prometheus metrics wrapper. Phase 1 should not expose every final production metric, but it should establish the registry, naming conventions, and cache-level counters/gauges that later phases can extend for gossip, backing stores, and network transport.
 
 ```go
 // internal/observability/logger.go
@@ -555,6 +561,118 @@ func (l *Logger) WithComponent(component string) *Logger {
     }
 }
 ```
+
+#### 4.1 Prometheus Metrics Foundation
+
+Add Prometheus client support in Phase 1 so cache behavior is observable from the first working single-node implementation.
+
+```bash
+go get github.com/prometheus/client_golang/prometheus
+go get github.com/prometheus/client_golang/prometheus/promhttp
+```
+
+```go
+// internal/observability/metrics.go
+package observability
+
+import (
+    "net/http"
+    "strconv"
+
+    "github.com/prometheus/client_golang/prometheus"
+    "github.com/prometheus/client_golang/prometheus/promhttp"
+)
+
+const namespace = "gossipcache"
+
+// Metrics owns cache-level Prometheus collectors.
+// Later phases add gossip, network, and backing-store collectors here.
+type Metrics struct {
+    registry *prometheus.Registry
+
+    cacheOperations *prometheus.CounterVec
+    cacheSizeBytes  prometheus.Gauge
+    cacheKeys       prometheus.Gauge
+}
+
+func NewMetrics(registry *prometheus.Registry) *Metrics {
+    if registry == nil {
+        registry = prometheus.NewRegistry()
+    }
+
+    m := &Metrics{
+        registry: registry,
+        cacheOperations: prometheus.NewCounterVec(
+            prometheus.CounterOpts{
+                Namespace: namespace,
+                Name:      "cache_operations_total",
+                Help:      "Total cache operations by operation and result.",
+            },
+            []string{"operation", "result"},
+        ),
+        cacheSizeBytes: prometheus.NewGauge(
+            prometheus.GaugeOpts{
+                Namespace: namespace,
+                Name:      "cache_size_bytes",
+                Help:      "Current cache size in bytes.",
+            },
+        ),
+        cacheKeys: prometheus.NewGauge(
+            prometheus.GaugeOpts{
+                Namespace: namespace,
+                Name:      "cache_keys",
+                Help:      "Current number of cache keys.",
+            },
+        ),
+    }
+
+    registry.MustRegister(m.cacheOperations, m.cacheSizeBytes, m.cacheKeys)
+    return m
+}
+
+func (m *Metrics) RecordCacheOperation(operation string, err error) {
+    result := "success"
+    if err != nil {
+        result = "error"
+    }
+    m.cacheOperations.WithLabelValues(operation, result).Inc()
+}
+
+func (m *Metrics) SetCacheStats(sizeBytes, keys int64) {
+    m.cacheSizeBytes.Set(float64(sizeBytes))
+    m.cacheKeys.Set(float64(keys))
+}
+
+func (m *Metrics) Handler() http.Handler {
+    return promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{})
+}
+
+func (m *Metrics) Address(port int) string {
+    return ":" + strconv.Itoa(port)
+}
+```
+
+Configuration should control whether the metrics endpoint starts:
+
+```go
+// cmd/gossipcache/main.go
+if cfg.Metrics.Enabled {
+    metrics := observability.NewMetrics(nil)
+    go func() {
+        mux := http.NewServeMux()
+        mux.Handle("/metrics", metrics.Handler())
+        if err := http.ListenAndServe(metrics.Address(cfg.Metrics.Port), mux); err != nil {
+            logger.Error("metrics server stopped", "error", err)
+        }
+    }()
+}
+```
+
+TDD slices:
+- `internal/observability/metrics_test.go`: registers collectors on an injected registry without duplicate global registrations.
+- `internal/observability/metrics_test.go`: records cache operation counters with `operation` and `result` labels.
+- `internal/observability/metrics_test.go`: updates cache size and key gauges.
+- `internal/observability/metrics_test.go`: `/metrics` handler exposes the `gossipcache_` metric family names.
 
 ### Step 5: Local Storage Implementation (Day 5-8)
 
@@ -1109,7 +1227,9 @@ func (m *Manager) Close() error {
 }
 ```
 
-### Step 7: Unit Tests (Day 11-12)
+### Step 7: Unit Tests and Regression Pass (Day 11-12)
+
+Most unit tests should already exist because each earlier step is test-first. Use this step to fill edge-case gaps, add table-driven coverage, and make sure package boundaries are documented by tests.
 
 ```go
 // internal/storage/memory/memory_test.go
@@ -1295,10 +1415,27 @@ func main() {
 
 ## Testing Strategy
 
-### Unit Tests
-- Test each component in isolation
-- Mock dependencies using interfaces
-- Aim for >80% code coverage
+### TDD Test Plan
+
+| Slice | Write This Test First | Expected Behavior | Checkpoint |
+| --- | --- | --- | --- |
+| Public API | `pkg/gossipcache/client_test.go` | A concrete type can satisfy the exported `Cache` interface without importing internals | `go test ./pkg/gossipcache` |
+| Public errors | `pkg/gossipcache/errors_test.go` | Sentinel errors have stable messages and remain comparable with `errors.Is` | `go test ./pkg/gossipcache` |
+| Defaults | `internal/config/config_test.go` | `Default()` returns a valid backed-mode single-node config | `go test ./internal/config` |
+| Config loading | `internal/config/loader_test.go` | YAML values load, supported env vars override file values, file errors are wrapped | `go test ./internal/config` |
+| Config validation | `internal/config/validator_test.go` | Invalid mode, cache size, TTL, gossip fanout, and TCP port are rejected | `go test ./internal/config` |
+| Entry expiration | `internal/storage/storage_test.go` | Zero expiration never expires, past expiration does, future expiration does not | `go test ./internal/storage` |
+| Memory storage | `internal/storage/memory/memory_test.go` | Set/Get returns copies, missing/expired keys return not found, delete removes keys | `go test -race ./internal/storage/...` |
+| Eviction | `internal/storage/memory/eviction_test.go` | LRU evicts the least recently used entry when size is exceeded | `go test ./internal/storage/memory` |
+| Cache manager | `internal/cache/local_cache_test.go` | Get/Set/Delete/GetMulti/SetMulti map storage behavior to public cache behavior | `go test ./internal/cache ./internal/storage/...` |
+| Stats | `internal/cache/stats_test.go` | Hits, misses, evictions, size, and key counts update deterministically | `go test ./internal/cache` |
+| Observability | `internal/observability/*_test.go` | Logger setup is deterministic, Prometheus collectors register on an injected registry, cache counters/gauges update, and `/metrics` exposes `gossipcache_` metrics | `go test ./internal/observability` |
+
+### Unit Test Rules
+- Test each component in isolation before wiring it into the next package.
+- Prefer table-driven tests for validation, expiration, eviction, and error mapping.
+- Use fakes for package boundaries until the real dependency has its own tests.
+- Aim for >80% code coverage, but treat behavior coverage as the gate.
 
 ### Benchmarks
 - Get/Set operations should be < 1ms

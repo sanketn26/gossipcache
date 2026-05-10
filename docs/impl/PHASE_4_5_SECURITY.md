@@ -23,6 +23,10 @@ Phase 4.5 closes the security gaps identified during implementation-plan review.
 
 ## Implementation Steps
 
+### Phase 4.5 TDD Rhythm
+
+Security work must start with negative tests. Write rejection tests before acceptance tests, then implement the smallest change that rejects unauthenticated, unauthorized, or malformed traffic without breaking valid clients.
+
 ### Step 1: TLS for Gossip Transport
 
 Add TLS config to the network layer without changing the gossip engine interface.
@@ -140,12 +144,13 @@ Document:
 
 ## Tests
 
-- TLS handshake succeeds with a trusted CA.
-- TLS handshake fails with an unknown CA.
-- mTLS rejects clients without certificates.
-- HMAC validation rejects tampered and stale messages.
-- API middleware rejects missing or incorrect credentials.
-- Rate limiter sheds excess load without blocking healthy peers.
+- `internal/network/tls_test.go`: trusted peers complete TLS handshake; untrusted CAs and expired certs fail.
+- `internal/network/tls_test.go`: mTLS rejects clients with no certificate or the wrong SAN.
+- `internal/gossip/join_auth_test.go`: join request HMAC validation rejects missing, expired, replayed, and tampered signatures.
+- `internal/api/auth_test.go`: HTTP API rejects missing, malformed, expired, and unauthorized credentials.
+- `internal/api/auth_test.go`: authorized credentials can access only the configured routes/scopes.
+- `internal/api/rate_limit_test.go`: limiter rejects sustained abusive traffic and recovers after the window resets.
+- `test/integration/security_test.go`: a secure multi-node cluster accepts valid peers and rejects rogue peers.
 
 ## Deliverables
 

@@ -60,6 +60,10 @@ gossipcache/
 
 ## Implementation Steps
 
+### Phase 3 TDD Rhythm
+
+Independent mode has tricky correctness rules, so write tests as executable examples of the data model. Start with pure vector-clock and resolver tests, then add storage and gossip integration, and only then run partition or chaos scenarios.
+
 ### Step 1: Vector Clock Implementation (Day 1-3)
 
 **SOLID**: Single Responsibility - Vector clock handles only causality tracking
@@ -648,6 +652,21 @@ func TestChaos_NetworkPartition(t *testing.T) {
 - [ ] Integration tests with conflicts
 - [ ] Chaos tests with partitions
 - [ ] Performance benchmarks
+
+## TDD Test Plan
+
+| Slice | Write This Test First | Expected Behavior | Checkpoint |
+| --- | --- | --- | --- |
+| Vector clock mutation | `internal/vclock/vclock_test.go` | Increment, merge, clone, and serialization preserve node counters | `go test ./internal/vclock` |
+| Vector clock compare | `internal/vclock/compare_test.go` | Equal, local-newer, remote-newer, and concurrent relations are detected | `go test ./internal/vclock` |
+| Conflict resolver | `internal/conflict/resolver_test.go` | LWW, custom resolver, and siblings strategies produce deterministic results | `go test ./internal/conflict` |
+| Data gossip message | `internal/gossip/data_message_test.go` | Full-data updates include value, tombstone, checksum, and vector clock metadata | `go test ./internal/gossip` |
+| Independent engine | `internal/gossip/independent_engine_test.go` | Incoming updates apply newer values, preserve conflicts, and reject stale updates | `go test -race ./internal/gossip ./internal/conflict` |
+| Vector-aware storage | `internal/storage/memory/vector_test.go` | Storage persists vector clocks, siblings, and tombstones without aliasing maps/slices | `go test -race ./internal/storage/...` |
+| Tombstones | `internal/cache/tombstone_test.go` | Delete creates a tombstone that gossips and suppresses stale resurrecting writes | `go test ./internal/cache ./internal/gossip` |
+| Anti-entropy | `internal/gossip/anti_entropy_test.go` | Divergent nodes exchange digests and repair missing/newer keys | `go test -race ./internal/gossip` |
+| Partition integration | `test/integration/independent_mode_test.go` | Partitioned writes converge after healing according to configured resolver | `go test -tags=integration ./test/integration` |
+| Chaos | `test/chaos/partition_test.go` | Random partitions preserve availability and eventually converge after repair | `go test -tags=chaos ./test/chaos` |
 
 ## Success Criteria
 

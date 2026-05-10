@@ -415,7 +415,7 @@ Add to original success criteria:
 
 ## Testing Requirements
 
-Add to Phase 4 tests:
+Add these tests before implementing each addendum feature. Keep unit tests untagged and deterministic; reserve tagged integration tests for real MySQL or DNS behavior.
 
 ### MySQL Tests
 ```bash
@@ -423,22 +423,31 @@ Add to Phase 4 tests:
 go test ./internal/backingstore/mysql/ -tags=integration
 ```
 
+TDD slices:
+- `internal/backingstore/mysql/mysql_test.go`: adapter builds queries, maps not-found errors, and preserves version semantics through a fake DB.
+- `internal/backingstore/mysql/mysql_integration_test.go`: real MySQL round-trips values and increments versions transactionally.
+
 ### DNS Discovery Tests
 ```bash
 # Test DNS discovery (requires local DNS or mock)
 go test ./internal/discovery/ -run TestDNS
 ```
 
+TDD slices:
+- `internal/discovery/dns_test.go`: SRV records become peer addresses, self is filtered out, duplicate records collapse.
+- `internal/discovery/dns_test.go`: resolver falls back to A records when SRV lookup is unavailable.
+- `internal/discovery/dns_test.go`: TTL refresh keeps the last good peer set when a transient lookup fails.
+
 ### Debug Endpoint Tests
 ```bash
 # Test debug endpoints
-curl http://localhost:8080/debug/peers
-curl http://localhost:8080/debug/gossip
-curl http://localhost:8080/debug/cache
-
-# Verify pprof works
-go tool pprof http://localhost:8080/debug/pprof/heap
+go test ./internal/api/ -run TestDebug
 ```
+
+TDD slices:
+- `internal/api/debug_test.go`: `/debug/peers`, `/debug/gossip`, and `/debug/cache` are disabled unless configured.
+- `internal/api/debug_test.go`: enabled debug endpoints redact secrets and return stable JSON shapes.
+- `internal/api/pprof_test.go`: pprof routes are registered only when profiling is explicitly enabled.
 
 ## Configuration Updates
 

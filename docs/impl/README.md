@@ -4,6 +4,18 @@ This directory contains detailed, phased implementation plans for building Gossi
 
 ## Implementation Principles
 
+### Test-Driven Development
+
+Each phase is written as a guided TDD plan. For every implementation slice:
+
+1. Write the smallest failing unit or integration test that describes the behavior.
+2. Run the narrow package test and confirm it fails for the expected reason.
+3. Implement the minimum production code needed to pass.
+4. Refactor while the test stays green.
+5. Run the phase checkpoint command before moving to the next slice.
+
+Phase docs include a **TDD Test Plan** section that lists the first tests to write, the package or file they belong in, and the command that should pass before the implementation is considered complete.
+
 ### SOLID Principles
 
 1. **Single Responsibility Principle (SRP)**: Each component/package has one reason to change
@@ -172,13 +184,14 @@ See [GAP_ANALYSIS.md](GAP_ANALYSIS.md) for complete details.
 ```bash
 # 1. Read phase documentation
 # 2. Review related architecture docs and sequence diagrams
-# 3. Implement components following package structure
-# 4. Write unit tests (TDD recommended)
-# 5. Write integration tests
-# 6. Run benchmarks
-# 7. Update documentation
-# 8. Code review
-# 9. Merge to main
+# 3. Pick the next TDD slice from the phase's TDD Test Plan
+# 4. Write the failing test first
+# 5. Implement only enough code to pass it
+# 6. Refactor and run the phase checkpoint command
+# 7. Add integration, benchmark, or chaos tests once the unit contract is stable
+# 8. Update documentation
+# 9. Code review
+# 10. Merge to main
 ```
 
 ### 2. Quality Gates
@@ -188,6 +201,7 @@ Each phase must pass:
 - [ ] >80% code coverage
 - [ ] All integration tests passing
 - [ ] Benchmarks meet performance targets
+- [ ] Every TDD slice in the phase test plan is complete
 - [ ] Code review approved
 - [ ] Documentation updated
 

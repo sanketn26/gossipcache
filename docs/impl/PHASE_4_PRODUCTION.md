@@ -32,6 +32,10 @@ Phase 4 makes GossipCache production-ready with support for additional backing s
 
 ## Implementation Steps
 
+### Phase 4 TDD Rhythm
+
+Production features should start with contract tests and failure-mode tests. For external systems, keep fast unit tests around adapters and add tagged integration tests for real Postgres, discovery providers, HTTP behavior, metrics, and shutdown.
+
 ### Step 1: SQL Backing Stores (Day 1-5)
 
 Implement Postgres first, then reuse the SQL patterns for MySQL/MariaDB. Both stores must satisfy `backingstore.BackingStore`, use connection pooling through `database/sql`, create their schema on startup, and maintain monotonically increasing per-key versions.
@@ -455,6 +459,22 @@ echo "GET http://localhost:8080/api/v1/cache/test" | \
 - [ ] Deployment manifests
 - [ ] Load test results
 - [ ] Complete documentation and runbooks
+
+## TDD Test Plan
+
+| Slice | Write This Test First | Expected Behavior | Checkpoint |
+| --- | --- | --- | --- |
+| Postgres store contract | `internal/backingstore/postgres/postgres_test.go` | SQL adapter maps rows, versions, not-found, and transient errors correctly through fakes | `go test ./internal/backingstore/postgres` |
+| Postgres integration | `internal/backingstore/postgres/postgres_integration_test.go` | Real Postgres round-trips data and increments versions transactionally | `go test -tags=integration ./internal/backingstore/postgres` |
+| Discovery contract | `internal/discovery/discovery_test.go` | Providers return stable peer sets, ignore self, and surface resolver errors | `go test ./internal/discovery` |
+| Kubernetes discovery | `internal/discovery/kubernetes_test.go` | Pod/service fixtures become peer addresses with deterministic filtering | `go test ./internal/discovery` |
+| HTTP API | `internal/api/http_test.go` | Get/Set/Delete/Stats map HTTP status codes to cache outcomes | `go test ./internal/api` |
+| Debug endpoints | `internal/api/debug_test.go` | Debug endpoints are disabled by default and require explicit enablement | `go test ./internal/api` |
+| Metrics | `internal/observability/metrics_test.go` | Prometheus collectors expose cache, gossip, and backing store metrics without duplicate registration | `go test ./internal/observability` |
+| Health checks | `internal/api/health_test.go` | Liveness and readiness reflect cache, backing store, and gossip state | `go test ./internal/api` |
+| Graceful shutdown | `internal/server/shutdown_test.go` | Shutdown drains requests, closes cache resources, and honors context deadlines | `go test -race ./internal/server` |
+| Manifests | `test/deploy/manifests_test.go` | Rendered manifests include required ports, probes, resources, and config references | `go test ./test/deploy` |
+| Load smoke | `test/load/load_test.go` | Sustained read/write traffic meets error-rate and latency thresholds | `go test -tags=load ./test/load` |
 
 ## Success Criteria
 

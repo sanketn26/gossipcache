@@ -66,6 +66,10 @@ gossipcache/
 
 ## Implementation Steps
 
+### Phase 2 TDD Rhythm
+
+Start each feature with a deterministic unit test and add Redis/network integration only after the unit contract is stable. Use fakes for backing stores, peers, and clocks so metadata gossip can be tested without a live cluster first.
+
 ### Step 1: Backing Store Interface (Day 1-2)
 
 **SOLID**: Interface Segregation - Clean interface for backing stores
@@ -1708,6 +1712,22 @@ func TestBackedMode_MultiNode(t *testing.T) {
 - [ ] Singleflight pattern implemented
 - [ ] Multi-node integration tests
 - [ ] Performance benchmarks
+
+## TDD Test Plan
+
+| Slice | Write This Test First | Expected Behavior | Checkpoint |
+| --- | --- | --- | --- |
+| Backing store contract | `internal/backingstore/backingstore_test.go` | Store interface supports get/set/delete/multi-key/version semantics through a fake | `go test ./internal/backingstore` |
+| Redis connector | `internal/backingstore/redis/redis_test.go` | Set increments version atomically, Get returns value/version, missing maps to not found | `go test ./internal/backingstore/redis` |
+| Redis integration | `internal/backingstore/redis/redis_integration_test.go` | Real Redis round-trips values and survives reconnects | `go test -tags=integration ./internal/backingstore/redis` |
+| Gossip messages | `internal/gossip/message_test.go` | Each message reports the correct type and validates required fields | `go test ./internal/gossip` |
+| Codec | `internal/network/codec_test.go` | Encode/decode round-trips messages and rejects bad magic, version, and truncated frames | `go test ./internal/network` |
+| Transport | `internal/network/transport_test.go` | Peer send/receive uses context cancellation and returns useful errors | `go test -race ./internal/network` |
+| Connection pool | `internal/network/pool_test.go` | Pool reuses connections and respects max connection limits | `go test -race ./internal/network` |
+| Backpressure | `internal/gossip/queue_test.go` | Queue drops, blocks, or rejects according to configured policy under pressure | `go test -race ./internal/gossip` |
+| Gossip engine | `internal/gossip/engine_test.go` | Change notifications fan out to selected peers and ignore stale/self-originated messages | `go test -race ./internal/gossip` |
+| Pull mechanism | `internal/cache/backed_cache_test.go` | Cache miss pulls from backing store once with singleflight and stores locally | `go test -race ./internal/cache ./internal/backingstore/...` |
+| Multi-node backed mode | `test/integration/backed_mode_test.go` | Three nodes converge through metadata gossip and Redis-backed pulls | `go test -tags=integration ./test/integration` |
 
 ## Success Criteria
 

@@ -6,14 +6,15 @@ The goal is not to copy every snippet exactly. The goal is to implement each lay
 
 ## How To Use This Guide
 
-Work in thin vertical slices:
+Work in thin vertical slices using red-green-refactor:
 
-1. Define the interface.
-2. Add the smallest implementation that compiles.
-3. Write tests for the behavior.
-4. Wire it into the next layer.
-5. Run `go test ./...`.
-6. Pause and answer the design questions before moving on.
+1. Name one observable behavior.
+2. Write the failing test first.
+3. Define or adjust the interface only as much as that test requires.
+4. Add the smallest implementation that compiles and passes.
+5. Refactor without changing behavior.
+6. Run the narrow package test, then the phase checkpoint.
+7. Pause and answer the design questions before moving on.
 
 Reference docs:
 - [Package Structure](PACKAGE_STRUCTURE.md)
@@ -43,6 +44,24 @@ Implement in this order so each step builds on something testable:
 14. Deployment manifests and runbooks
 15. Optional security hardening
 
+## TDD Loop For Every Step
+
+Use this loop for each item in the implementation order:
+
+1. **Red**: add a test in the package that owns the behavior. For cross-package behavior, start with the lowest unit test and add integration coverage after the units are stable.
+2. **Green**: implement the minimum production code to pass that one test. Avoid filling in future features early.
+3. **Refactor**: clean naming, interfaces, duplication, and package boundaries while tests remain green.
+4. **Checkpoint**: run the command listed in the step. If the behavior touches concurrency, run the race detector.
+
+Suggested test file names:
+- Public API contracts: `pkg/gossipcache/*_test.go`
+- Config: `internal/config/*_test.go`
+- Storage: `internal/storage/*_test.go` and `internal/storage/memory/*_test.go`
+- Cache behavior: `internal/cache/*_test.go`
+- Backing stores: `internal/backingstore/<store>/*_test.go`
+- Gossip and transport: `internal/gossip/*_test.go`, `internal/network/*_test.go`
+- Phase-level integration: `test/integration/*_test.go`
+
 ## Step 1: Public API
 
 Start with the contract that users will import. Keep this package small and boring.
@@ -52,6 +71,11 @@ Create:
 - `pkg/gossipcache/types.go`
 - `pkg/gossipcache/errors.go`
 - `pkg/gossipcache/client.go`
+
+Tests first:
+- `pkg/gossipcache/client_test.go`: compile-time assertion that an implementation satisfies `Cache`.
+- `pkg/gossipcache/errors_test.go`: sentinel errors have stable messages and work with `errors.Is`.
+- `pkg/gossipcache/types_test.go`: default/public config values preserve expected zero-value behavior.
 
 Example:
 
@@ -136,6 +160,12 @@ Create:
 - `internal/config/config.go`
 - `internal/config/defaults.go`
 - `internal/config/validator.go`
+
+Tests first:
+- `internal/config/config_test.go`: defaults produce a valid single-node config.
+- `internal/config/loader_test.go`: YAML file values load correctly.
+- `internal/config/loader_test.go`: supported environment variables override file values.
+- `internal/config/validator_test.go`: invalid mode, size, TTL, fanout, and ports fail with useful errors.
 
 Example:
 
@@ -308,6 +338,13 @@ Create:
 - `internal/cache/cache.go`
 - `internal/cache/local_cache.go`
 - `internal/cache/stats.go`
+
+Tests first:
+- `internal/cache/local_cache_test.go`: `Set` then `Get` round-trips bytes.
+- `internal/cache/local_cache_test.go`: missing keys increment misses and return the public not-found error.
+- `internal/cache/local_cache_test.go`: returned bytes are copies, not shared storage.
+- `internal/cache/local_cache_test.go`: `GetMulti` returns deterministic partial results.
+- `internal/cache/local_cache_test.go`: `Close` prevents later operations.
 
 Example:
 
