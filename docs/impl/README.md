@@ -108,6 +108,26 @@ Phase docs include a **TDD Test Plan** section that lists the first tests to wri
 - Load testing results
 - Documentation
 
+### [Phase 5: Demo, Repository Polish, and Sponsorship](PHASE_5_DEMO_POLISH_SPONSORSHIP.md)
+**Goal**: Turn the project into a polished open-source showcase with a great demo and support path
+
+**Duration**: 1-2 weeks
+
+**Components**:
+- 3-node local demo with repeatable scenarios
+- Demo dashboard or terminal live view
+- Benchmark output and README claims
+- Repository polish (CI, issue templates, changelog, contribution docs)
+- Buy Me a Coffee funding setup
+- v0.1.0 demo release
+
+**Deliverables**:
+- `make demo` starts a working cluster from a clean checkout
+- Demo scripts show convergence, staleness, deletes, and node restart
+- Polished root README with quick start, screenshots, and trade-offs
+- `.github/FUNDING.yml` and tasteful support links
+- v0.1.0 release notes and launch assets
+
 ## Implementation Documents
 
 ### Core Phase Plans
@@ -118,6 +138,7 @@ Phase docs include a **TDD Test Plan** section that lists the first tests to wri
 - **[PHASE_3_INDEPENDENT_MODE.md](PHASE_3_INDEPENDENT_MODE.md)** - Independent mode with vector clocks
 - **[PHASE_4_PRODUCTION.md](PHASE_4_PRODUCTION.md)** - Production features and deployment
 - **[PHASE_4_5_SECURITY.md](PHASE_4_5_SECURITY.md)** - Optional security hardening
+- **[PHASE_5_DEMO_POLISH_SPONSORSHIP.md](PHASE_5_DEMO_POLISH_SPONSORSHIP.md)** - Demo, repository polish, and Buy Me a Coffee setup
 - **[PHASE_4_ADDENDUM.md](PHASE_4_ADDENDUM.md)** - ✨ **NEW**: Additional production features
   - MySQL backing store
   - DNS-based discovery
@@ -132,19 +153,20 @@ Phase docs include a **TDD Test Plan** section that lists the first tests to wri
 ## Timeline Overview
 
 ```
-Month 1          Month 2          Month 3          Month 4
-│────────────────│────────────────│────────────────│────────────────│
-│   Phase 1      │   Phase 2      │   Phase 3      │   Phase 4      │
-│  Foundation    │  Backed Mode   │ Independent    │  Production    │
-│  (2-3 weeks)   │  (3-4 weeks)   │  (3-4 weeks)   │  (2.5-3.5wks)  │
-│                │                │                │                │
-│ Week 1  Week 2 │ Week 1  Week 2 │ Week 1  Week 2 │ Week 1  Week 2 │
-│ Setup   Local  │ Redis   Gossip │ VClock  Gossip │ Postgres MySQL │
-│ Ifaces  Cache  │ Connect Pool   │ Impl    Full   │ K8s+DNS Debug  │
-│ Config  LRU    │ Gossip  Pull   │ Conflict Res   │ pprof   Docs   │
-└────────────────┴────────────────┴────────────────┴────────────────┘
+Month 1          Month 2          Month 3          Month 4          Month 5
+│────────────────│────────────────│────────────────│────────────────│────────────│
+│   Phase 1      │   Phase 2      │   Phase 3      │   Phase 4      │  Phase 5   │
+│  Foundation    │  Backed Mode   │ Independent    │  Production    │Demo+Polish │
+│  (2-3 weeks)   │  (3-4 weeks)   │  (3-4 weeks)   │  (2.5-3.5wks)  │ (1-2 wks)  │
+│                │                │                │                │            │
+│ Week 1  Week 2 │ Week 1  Week 2 │ Week 1  Week 2 │ Week 1  Week 2 │ Week 1     │
+│ Setup   Local  │ Redis   Gossip │ VClock  Gossip │ Postgres MySQL │ Demo       │
+│ Ifaces  Cache  │ Connect Pool   │ Impl    Full   │ K8s+DNS Debug  │ README     │
+│ Config  LRU    │ Gossip  Pull   │ Conflict Res   │ pprof   Docs   │ Sponsor    │
+└────────────────┴────────────────┴────────────────┴────────────────┴────────────┘
 
 ✨ Updated with gap analysis findings: +connection pooling, +MySQL, +DNS, +debug/pprof
+Phase 5 adds demo polish, repository readiness, and Buy Me a Coffee setup
 ```
 
 ## Recent Updates (2025-01-30)
@@ -176,6 +198,17 @@ A comprehensive review identified **15 gaps** between design docs and implementa
 - Advanced operations (rebalancing, backup/restore) - Low priority
 
 See [GAP_ANALYSIS.md](GAP_ANALYSIS.md) for complete details.
+
+### Demo and Sponsorship Phase Added
+
+[Phase 5](PHASE_5_DEMO_POLISH_SPONSORSHIP.md) captures the post-production-readiness work needed to make GossipCache approachable as a solo open-source project:
+
+- Repeatable 3-node local demo
+- Demo scripts and optional dashboard
+- README rewrite and repository polish
+- Benchmarks and launch assets
+- Buy Me a Coffee sponsorship setup
+- v0.1.0 demo release
 
 ## Development Workflow
 

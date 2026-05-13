@@ -12,6 +12,7 @@ Welcome to the GossipCache documentation. This directory contains comprehensive 
 - **[impl/README.md](impl/README.md)** - Phased implementation plan, package structure, gap analysis, and testing strategy
 - **[impl/IMPLEMENTATION_GUIDE.md](impl/IMPLEMENTATION_GUIDE.md)** - Hands-on implementation steps with code examples and checkpoints
 - **[impl/PHASE_4_5_SECURITY.md](impl/PHASE_4_5_SECURITY.md)** - Optional security hardening plan for untrusted network deployments
+- **[impl/PHASE_5_DEMO_POLISH_SPONSORSHIP.md](impl/PHASE_5_DEMO_POLISH_SPONSORSHIP.md)** - Demo, repository polish, and Buy Me a Coffee setup
 
 ### Diagrams
 
@@ -53,6 +54,7 @@ All diagrams use Mermaid format and can be viewed in any Markdown viewer that su
 - Read [TECHNICAL_SPEC.md](TECHNICAL_SPEC.md) for API and interface details
 - Review data structures and protocols
 - Check sequence diagrams for implementation flows
+- Use [Phase 5](impl/PHASE_5_DEMO_POLISH_SPONSORSHIP.md) when preparing the public demo and v0.1.0 release
 
 **For DevOps/SRE:**
 - Read [DEPLOYMENT.md](DEPLOYMENT.md) for deployment guides

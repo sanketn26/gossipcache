@@ -4,7 +4,7 @@
 
 **Duration**: 2-3 weeks
 
-**Status**: Not Started
+**Status**: Complete
 
 ## Overview
 
@@ -13,15 +13,15 @@ Phase 1 establishes the architectural foundation for GossipCache. We'll create c
 ## Objectives
 
 - [x] Project structure and build system
-- [ ] Core interfaces following SOLID principles
-- [ ] Configuration management system
-- [ ] Logging and Prometheus observability foundation
-- [ ] Local storage engine with concurrency control
-- [ ] Basic cache operations (Get, Set, Delete, GetMulti, SetMulti)
-- [ ] TTL and expiration handling
-- [ ] Eviction policies (LRU)
-- [ ] Comprehensive unit tests (>80% coverage)
-- [ ] Performance benchmarks
+- [x] Core interfaces following SOLID principles
+- [x] Configuration management system
+- [x] Logging and Prometheus observability foundation
+- [x] Local storage engine with concurrency control
+- [x] Basic cache operations (Get, Set, Delete, GetMulti, SetMulti)
+- [x] TTL and expiration handling
+- [x] Eviction policies (LRU)
+- [x] Comprehensive unit tests (>80% coverage)
+- [x] Performance benchmarks
 
 ## Package Structure
 
@@ -1229,188 +1229,44 @@ func (m *Manager) Close() error {
 
 ### Step 7: Unit Tests and Regression Pass (Day 11-12)
 
-Most unit tests should already exist because each earlier step is test-first. Use this step to fill edge-case gaps, add table-driven coverage, and make sure package boundaries are documented by tests.
+Completed in the repository with focused, dependency-free Go tests:
 
-```go
-// internal/storage/memory/memory_test.go
-package memory
+- `internal/storage/memory/memory_test.go`: set/get copies values, missing keys return `storage.ErrKeyNotFound`, expired keys are removed on access, delete removes keys, stats update, close is idempotent, batch operations work, and concurrent access is race-safe.
+- `internal/storage/memory/eviction_test.go`: LRU selects the least recently used key and moves existing keys to the front on re-add.
+- `internal/storage/memory/sharded_test.go`: invalid shard counts fall back to `defaultShards`, and concurrent map access remains safe.
+- `internal/cache/cache_test.go`: manager-level `Get`, `Set`, `Delete`, `GetMulti`, `SetMulti`, `Flush`, `Stats`, explicit TTLs, and `Close` are covered through the storage interface.
+- Existing tests cover public API contracts, public errors, service lifecycle, config defaults/loading/validation, storage entry expiration, logger/metrics setup, and metrics service lifecycle.
 
-import (
-    "context"
-    "testing"
-    "time"
+Regression fixes made while completing this step:
 
-    "github.com/stretchr/testify/assert"
-    "github.com/stretchr/testify/require"
-)
-
-func TestMemoryStorage_GetSet(t *testing.T) {
-    storage, err := New(1<<20, "lru") // 1MB
-    require.NoError(t, err)
-    defer storage.Close()
-
-    ctx := context.Background()
-
-    // Test Set
-    err = storage.Set(ctx, "key1", []byte("value1"), 5*time.Minute)
-    require.NoError(t, err)
-
-    // Test Get
-    entry, err := storage.Get(ctx, "key1")
-    require.NoError(t, err)
-    assert.Equal(t, "key1", entry.Key)
-    assert.Equal(t, []byte("value1"), entry.Value)
-}
-
-func TestMemoryStorage_Expiration(t *testing.T) {
-    storage, err := New(1<<20, "lru")
-    require.NoError(t, err)
-    defer storage.Close()
-
-    ctx := context.Background()
-
-    // Set with short TTL
-    err = storage.Set(ctx, "key1", []byte("value1"), 100*time.Millisecond)
-    require.NoError(t, err)
-
-    // Should exist immediately
-    _, err = storage.Get(ctx, "key1")
-    require.NoError(t, err)
-
-    // Wait for expiration
-    time.Sleep(150 * time.Millisecond)
-
-    // Should be expired
-    _, err = storage.Get(ctx, "key1")
-    assert.Error(t, err)
-}
-
-func TestMemoryStorage_Eviction(t *testing.T) {
-    // Small cache for testing eviction
-    storage, err := New(100, "lru") // 100 bytes
-    require.NoError(t, err)
-    defer storage.Close()
-
-    ctx := context.Background()
-
-    // Fill cache beyond capacity
-    for i := 0; i < 10; i++ {
-        key := fmt.Sprintf("key%d", i)
-        value := []byte(strings.Repeat("x", 20)) // 20 bytes
-        err = storage.Set(ctx, key, value, 5*time.Minute)
-        require.NoError(t, err)
-    }
-
-    // Check stats
-    stats, err := storage.Stats(ctx)
-    require.NoError(t, err)
-    assert.Greater(t, stats.Evictions, int64(0))
-}
-
-// Benchmark tests
-func BenchmarkMemoryStorage_Get(b *testing.B) {
-    storage, _ := New(1<<30, "lru") // 1GB
-    defer storage.Close()
-
-    ctx := context.Background()
-    storage.Set(ctx, "key1", []byte("value1"), 5*time.Minute)
-
-    b.ResetTimer()
-    for i := 0; i < b.N; i++ {
-        storage.Get(ctx, "key1")
-    }
-}
-
-func BenchmarkMemoryStorage_Set(b *testing.B) {
-    storage, _ := New(1<<30, "lru")
-    defer storage.Close()
-
-    ctx := context.Background()
-    value := []byte("value1")
-
-    b.ResetTimer()
-    for i := 0; i < b.N; i++ {
-        key := fmt.Sprintf("key%d", i)
-        storage.Set(ctx, key, value, 5*time.Minute)
-    }
-}
-```
+- `MemoryStorage.Set` now copies the caller's value slice before storing it.
+- `MemoryStorage.Get` now returns a copied entry so callers cannot mutate cached data through the returned slice.
+- `MemoryStorage.Set` evicts after insertion until the cache is back under `maxSize`, so a newly added entry cannot leave the cache permanently above capacity.
 
 ### Step 8: Integration Example (Day 13-14)
 
-```go
-// cmd/gossipcache/main.go
-package main
+Completed in `cmd/gossipcache/main.go`.
 
-import (
-    "context"
-    "flag"
-    "fmt"
-    "log"
-    "os"
-    "os/signal"
-    "syscall"
+The command now:
 
-    "github.com/sanketn26/gossipcache/internal/cache"
-    "github.com/sanketn26/gossipcache/internal/config"
-    "github.com/sanketn26/gossipcache/internal/observability"
-    "github.com/sanketn26/gossipcache/internal/storage/memory"
-)
+- Loads config from an optional `-config` flag, defaulting to built-in config when omitted.
+- Creates the structured logger from config.
+- Starts the metrics service through `gossipcache.ServiceRegistry`.
+- Creates the in-memory storage engine and cache manager.
+- Exercises a simple `Set`/`Get` example at startup.
+- Waits for `SIGINT` or `SIGTERM`.
+- Gracefully closes the cache and shuts down registered services.
 
-func main() {
-    configPath := flag.String("config", "config.yaml", "Path to configuration file")
-    flag.Parse()
+Run it with:
 
-    // Load configuration
-    cfg, err := config.Load(*configPath)
-    if err != nil {
-        log.Fatalf("Failed to load config: %v", err)
-    }
+```bash
+go run ./cmd/gossipcache
+```
 
-    // Setup logger
-    logger := observability.NewLogger(cfg.Logging.Level, cfg.Logging.Format)
-    logger.Info("starting gossipcache",
-        "node_id", cfg.NodeID,
-        "mode", cfg.Mode,
-    )
+Or with a config file:
 
-    // Create storage
-    storage, err := memory.New(cfg.Cache.MaxSize, cfg.Cache.EvictionPolicy)
-    if err != nil {
-        logger.Error("failed to create storage", "error", err)
-        os.Exit(1)
-    }
-
-    // Create cache manager
-    cacheManager := cache.NewManager(storage, &cache.CacheConfig{
-        DefaultTTL: cfg.Cache.DefaultTTL,
-    })
-
-    // Example: Set and Get
-    ctx := context.Background()
-
-    if err := cacheManager.Set(ctx, "hello", []byte("world"), 0); err != nil {
-        logger.Error("failed to set key", "error", err)
-    }
-
-    value, err := cacheManager.Get(ctx, "hello")
-    if err != nil {
-        logger.Error("failed to get key", "error", err)
-    } else {
-        logger.Info("retrieved value", "key", "hello", "value", string(value))
-    }
-
-    // Wait for interrupt
-    sigCh := make(chan os.Signal, 1)
-    signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-    <-sigCh
-
-    logger.Info("shutting down")
-
-    if err := cacheManager.Close(); err != nil {
-        logger.Error("error closing cache", "error", err)
-    }
-}
+```bash
+go run ./cmd/gossipcache -config config.yaml
 ```
 
 ## Testing Strategy
@@ -1438,21 +1294,22 @@ func main() {
 - Aim for >80% code coverage, but treat behavior coverage as the gate.
 
 ### Benchmarks
-- Get/Set operations should be < 1ms
-- Concurrent access benchmarks
-- Memory usage profiling
+- `test/benchmark/cache_bench_test.go` covers cache manager `Get`, `Set`, and parallel mixed `Get`/`Set` workloads.
+- Run benchmarks with `go test -bench=. -benchmem ./...`.
+- Get/Set operations should remain under 1ms on normal development hardware.
+- CPU, memory, block, and trace profiling targets are available through the Makefile.
 
 ## Deliverables
 
-- [ ] Complete package structure
-- [ ] Core interfaces defined
-- [ ] Configuration system working
-- [ ] Local storage with LRU eviction
-- [ ] Cache manager implementation
-- [ ] Unit tests with >80% coverage
-- [ ] Benchmarks showing < 1ms operations
-- [ ] Working main.go example
-- [ ] Documentation updated
+- [x] Complete package structure
+- [x] Core interfaces defined
+- [x] Configuration system working
+- [x] Local storage with LRU eviction
+- [x] Cache manager implementation
+- [x] Unit tests with >80% coverage
+- [x] Benchmarks showing < 1ms operations
+- [x] Working main.go example
+- [x] Documentation updated
 
 ## Success Criteria
 

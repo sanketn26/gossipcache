@@ -32,6 +32,7 @@ Comprehensive documentation is available in the [docs/](docs/) directory:
 - **[Architecture Overview](docs/ARCHITECTURE.md)** - System design, components, and trade-offs
 - **[Technical Specification](docs/TECHNICAL_SPEC.md)** - Detailed specs, data structures, and APIs
 - **[Deployment Guide](docs/DEPLOYMENT.md)** - Deploy on EC2, Docker, or Kubernetes
+- **[Demo and Polish Plan](docs/impl/PHASE_5_DEMO_POLISH_SPONSORSHIP.md)** - Post-Phase 4 demo, repo polish, and Buy Me a Coffee setup
 - **[Sequence Diagrams](docs/diagrams/)** - Visual flows for both operating modes
 
 See [docs/README.md](docs/README.md) for full documentation index.
