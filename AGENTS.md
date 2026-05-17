@@ -1,127 +1,65 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for AI coding agents working in this repository.
 
 ## Project Overview
 
-GossipCache is a distributed key-value cache that automatically synchronizes across nodes using the gossip protocol. This allows for eventual consistency across a cluster of cache nodes without requiring a central coordinator.
+GossipCache is a Go module for a distributed in-memory key-value cache that synchronizes nodes through a gossip protocol. The central design idea is that cache reads should stay local and fast; gossip is used to keep local caches eventually consistent across a cluster.
 
-**Core Philosophy**: Caches must be local. If accessing a cache requires a network call, you're just pushing the problem elsewhere. GossipCache provides in-memory, local cache with microsecond access times while using gossip protocol to maintain consistency across nodes.
+The module path is:
 
-## Project Status
+```text
+github.com/sanketn26/gossipcache
+```
 
-This is an early-stage project. The codebase structure and commands below will be populated as the project develops.
+The project supports two intended operating modes:
+
+- Backed mode: Redis, Valkey, Postgres, or another backing store is the source of truth. Gossip should primarily propagate metadata and invalidation signals; nodes pull values from the backing store when needed.
+- Independent mode: no backing store. Gossip carries data and conflict metadata between nodes, with eventual consistency across peers.
+
+## Repository Map
+
+- `cmd/gossipcache/`: application entry point.
+- `pkg/gossipcache/`: public client-facing API. Keep exported API changes deliberate and documented.
+- `internal/cache/`: cache coordination layer built on storage abstractions.
+- `internal/storage/`: storage interfaces and errors.
+- `internal/storage/memory/`: in-memory storage, sharding, TTL expiration, and eviction policies.
+- `internal/config/`: configuration structs, loading, and validation.
+- `internal/observability/`: logging and Prometheus metrics support.
+- `test/benchmark/`: benchmark tests.
+- `docs/`: architecture, deployment, diagrams, and implementation planning.
+- `CLAUDE.md`: older agent guidance with useful architecture notes.
+
+Some packages described in `docs/impl/PACKAGE_STRUCTURE.md` are planned but not yet implemented. Treat docs as design intent, but verify against the current tree before editing.
 
 ## Development Commands
 
+Prefer Make targets when they match the task:
+
 ```bash
-# Initialize Go module (if not already done)
-go mod init github.com/sanketnaik/gossipcache
+make test        # go test -v -race ./...
+make test-short  # go test -v -short ./...
+make coverage    # race tests plus coverage report
+make bench       # benchmarks
+make fmt         # go fmt ./...
+make vet         # go vet ./...
+make lint        # golangci-lint if installed
+make build       # build cmd/gossipcache into bin/
+make all         # fmt, vet, lint, test, build
+```
 
-# Run tests
+Direct Go commands are also fine for narrow work:
+
+```bash
 go test ./...
-
-# Run tests with coverage
-go test -cover ./...
-
-# Run tests with verbose output
-go test -v ./...
-
-# Run a specific test
 go test -run TestName ./path/to/package
-
-# Build the project
-go build ./...
-
-# Format code
+go test -bench=. -benchmem ./...
 go fmt ./...
-
-# Run linter (requires golangci-lint)
-golangci-lint run
-
-# Tidy dependencies
+go vet ./...
 go mod tidy
 ```
 
-## Architecture
-
-**Operating Modes:**
-
-GossipCache supports two distinct operating modes:
-
-1. **Backed Mode**:
-   - Primary data source is a backing store (Redis/Valkey, Postgres, or other databases)
-   - Cache nodes auto-synchronize with the backing store
-   - Acts as a distributed read-through/write-through cache layer
-   - Backing store serves as source of truth
-   - **Development Roadmap**: Starting with Redis/Valkey support, then Postgres, then generic DB abstraction
-
-2. **Independent Mode**:
-   - True distributed cache with no external backing store
-   - Any node can accept writes
-   - Updates automatically propagate across nodes via gossip
-   - Eventual consistency across all nodes
-
-**Deployment Targets:**
-- EC2 instances (direct node-to-node communication)
-- Docker containers (network discovery and communication)
-- Kubernetes pods (service discovery via K8s API or DNS)
-
-**Core Components:**
-
-- **Gossip Protocol**: Hybrid approach optimized per mode
-  - **Backed Mode**: Gossip propagates metadata only (key, version, checksum) - minimal bandwidth
-    - On version mismatch → Pull actual data from backing store
-    - Gossip acts as change detection/invalidation mechanism
-    - Scales efficiently: gossip overhead constant regardless of value size
-  - **Independent Mode**: Gossip propagates full data (key + value + vector clock)
-    - No backing store available, gossip must carry actual values
-    - Direct propagation for faster consistency
-  - Both modes use anti-entropy for catching missed updates
-
-- **Cache Storage Engine**: In-memory map with concurrency control (sync.Map or sharded locks) - local access in microseconds
-
-- **Mode Abstraction**: Interface to support both backed and independent modes
-
-- **Backing Store Abstraction**: Generic interface to support multiple backing stores
-  - Initial implementation: Redis/Valkey client
-  - Planned: Postgres connector (using LISTEN/NOTIFY or polling)
-  - Future: MySQL, MongoDB, DynamoDB, etc.
-  - **Pull Strategy**: Nodes pull data from backing store when gossip indicates changes
-  - **Singleflight Pattern**: Prevent thundering herd when multiple nodes pull same key
-
-- **Node Discovery**: Environment-specific discovery mechanisms (EC2 metadata, Docker networking, K8s API)
-
-- **Network Layer**: Node-to-node communication (TCP/UDP)
-
-- **Membership Management**: Tracking active nodes in the cluster
-
-- **Conflict Resolution**:
-  - Backed Mode: Backing store is source of truth, version numbers for ordering
-  - Independent Mode: Vector clocks for conflict detection, configurable resolution (last-write-wins, custom merge)
-
-- **Anti-Entropy**: Periodic full-state reconciliation to ensure consistency
-
-**Performance Goals:**
-- Local cache access: < 1ms (in-memory speed)
-- Compare to: Redis over network (1-5ms), Database queries (10-100ms+)
-- Target: 100-1000x faster than direct database access
-- Gossip bandwidth efficiency: Metadata-only gossip in backed mode uses ~20x less bandwidth than full-data gossip
-
-**Design Decisions:**
-
-1. **Gossip Optimization**: Use gossip for different purposes per mode
-   - Backed mode: Gossip = change detection, Pull = data fetch (bandwidth efficient)
-   - Independent mode: Gossip = data propagation (no choice, must carry data)
-
-2. **Consistency Model**: Eventual consistency via gossip + anti-entropy
-   - Acceptable staleness window (configurable via gossip interval and TTL)
-   - Trade-off: Lower latency and higher availability vs strict consistency
-
-3. **Failure Modes**:
-   - Backed mode: Serve stale cache if backing store unavailable
-   - Independent mode: Partition tolerance via vector clocks
-   - Both: TTL-based expiration ensures bounded staleness
+Use `go mod tidy` only when dependency changes require it.
 
 ## Coding Guidelines
 
@@ -199,3 +137,53 @@ GossipCache supports two distinct operating modes:
 - Inject dependencies instead of constructing concrete implementations deep inside orchestration code.
 - Keep SDKs, wire formats, external clients, and provider-specific behavior isolated behind adapter packages.
 - Make components replaceable for tests, local development, alternative backing stores, sandboxed execution, and future deployment environments.
+
+## Architecture Invariants
+
+- Local cache access should remain the fast path.
+- Backed mode should treat the backing store as source of truth.
+- Independent mode should not depend on external storage for correctness.
+- Gossip behavior should preserve eventual consistency and tolerate missed updates through anti-entropy.
+- TTL and eviction behavior should be bounded, testable, and deterministic where practical.
+- Shutdown paths should be idempotent and should stop goroutines cleanly.
+
+## Testing Expectations
+
+Add or update tests next to the package being changed. Important cases for this project include:
+
+- TTL expiration and stale entry removal.
+- Cache misses, hits, deletes, and multi-key operations.
+- Eviction policy behavior under size pressure.
+- Closed storage/cache behavior.
+- Config defaults, validation, and env/file loading.
+- Metrics/logging behavior when touching observability code.
+- Race-sensitive paths for sharded maps, atomics, goroutines, and close handling.
+
+For behavioral changes, run the smallest relevant package test first, then `make test` or `go test -race ./...` when feasible.
+
+## Documentation
+
+Update docs when changing architecture, public API, configuration, deployment assumptions, or operating-mode semantics. Start with:
+
+- `README.md` for user-facing overview changes.
+- `docs/ARCHITECTURE.md` for system design changes.
+- `docs/TECHNICAL_SPEC.md` for protocol, data structure, or API details.
+- `docs/DEPLOYMENT.md` for runtime and environment changes.
+- `docs/impl/` for implementation-plan updates.
+
+## Agent Workflow
+
+1. Inspect the current files before assuming planned docs are implemented.
+2. Check `git status --short` before editing and do not revert unrelated user changes.
+3. Keep edits focused on the requested behavior.
+4. Run `go fmt` on touched Go packages.
+5. Run targeted tests, then broader tests when the change affects shared behavior.
+6. In the final response, summarize changed files and verification performed. Mention any tests not run.
+
+## Things To Avoid
+
+- Do not make broad rewrites of package structure unless explicitly requested.
+- Do not add dependencies for small utilities that the standard library can handle cleanly.
+- Do not hide test failures by weakening assertions.
+- Do not change module path, exported names, or config keys casually.
+- Do not introduce background goroutines without clear shutdown ownership and tests.
