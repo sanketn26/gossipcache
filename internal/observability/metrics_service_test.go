@@ -1,11 +1,13 @@
 package observability
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -73,6 +75,67 @@ func TestMetricsServiceRejectsDoubleStart(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "already started") {
 		t.Fatalf("second Start error = %q, want already started", err.Error())
+	}
+}
+
+// safeBuffer is a thread-safe bytes.Buffer for capturing logger output that
+// may be written from the serve goroutine.
+type safeBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *safeBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *safeBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func TestMetricsServiceUsesInjectedLogger(t *testing.T) {
+	buf := &safeBuffer{}
+	logger := NewLoggerWithWriter("error", "json", buf)
+
+	cfg := config.Default()
+	cfg.Metrics.Port = 0
+
+	service := NewMetricsServiceWithLogger(NewMetrics(nil), logger)
+	if err := service.Start(context.Background(), cfg); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	// Sanity: the service is serving and the logger field is wired.
+	body := getMetricsBody(t, service.Address())
+	if !strings.Contains(body, "gossipcache_cache_size_bytes") {
+		t.Fatalf("metrics body missing gossipcache_cache_size_bytes:\n%s", body)
+	}
+
+	if err := service.Shutdown(context.Background(), cfg); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+
+	// Clean shutdown should not surface a serve error.
+	if strings.Contains(buf.String(), "metrics server serve failed") {
+		t.Fatalf("clean shutdown logged serve failure: %s", buf.String())
+	}
+}
+
+func TestNewMetricsServiceProvidesDefaultLogger(t *testing.T) {
+	// Calling Start without panicking confirms the default logger is wired.
+	service := NewMetricsService(nil)
+	cfg := config.Default()
+	cfg.Metrics.Port = 0
+
+	if err := service.Start(context.Background(), cfg); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := service.Shutdown(context.Background(), cfg); err != nil {
+		t.Fatalf("Shutdown: %v", err)
 	}
 }
 

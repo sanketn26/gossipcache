@@ -29,8 +29,10 @@ func main() {
 	logger := observability.NewLogger(cfg.Logging.Level, cfg.Logging.Format)
 	logger.Info("starting gossipcache", "node_id", cfg.NodeID, "mode", cfg.Mode)
 
+	metrics := observability.NewMetrics(nil)
+
 	registry := gossipcache.NewServiceRegistry[config.Config]()
-	metricsService := observability.NewMetricsService(nil)
+	metricsService := observability.NewMetricsServiceWithLogger(metrics, logger.WithComponent("metrics_service"))
 	if err := registry.Register("metrics", metricsService); err != nil {
 		logger.Error("register metrics service", "error", err)
 		os.Exit(1)
@@ -42,24 +44,24 @@ func main() {
 		os.Exit(1)
 	}
 
-	store, err := memory.New(cfg.Cache.MaxSize, cfg.Cache.EvictionPolicy)
+	store, err := memory.New(memory.Options{
+		MaxSize:        cfg.Cache.MaxSize,
+		EvictionPolicy: cfg.Cache.EvictionPolicy,
+		MaxKeySize:     cfg.Cache.MaxKeySize,
+		MaxValueSize:   cfg.Cache.MaxValueSize,
+	})
 	if err != nil {
 		logger.Error("create memory storage", "error", err)
 		shutdown(ctx, registry, cfg, logger)
 		os.Exit(1)
 	}
 
-	cacheManager := cache.NewManager(store, &cache.CacheConfig{
+	var cacheManager gossipcache.Cache = cache.NewManager(store, &cache.CacheConfig{
 		DefaultTTL: cfg.Cache.DefaultTTL,
+		Metrics:    metrics,
 	})
 
-	if err := cacheManager.Set(ctx, "hello", []byte("world"), 0); err != nil {
-		logger.Error("set example key", "error", err)
-	} else if value, err := cacheManager.Get(ctx, "hello"); err != nil {
-		logger.Error("get example key", "error", err)
-	} else {
-		logger.Info("retrieved example value", "key", "hello", "value", string(value))
-	}
+	logger.Info("cache ready", "max_size", cfg.Cache.MaxSize, "default_ttl", cfg.Cache.DefaultTTL)
 
 	waitForSignal()
 	logger.Info("shutting down")

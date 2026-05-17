@@ -18,13 +18,27 @@ var _ gossipcache.Service[config.Config] = (*MetricsService)(nil)
 type MetricsService struct {
 	mu      sync.Mutex
 	metrics *Metrics
+	logger  *Logger
 	server  *http.Server
 	address string
 }
 
+// NewMetricsService builds a metrics service with a default logger. Use
+// NewMetricsServiceWithLogger to plug in the application logger.
 func NewMetricsService(metrics *Metrics) *MetricsService {
+	return NewMetricsServiceWithLogger(metrics, nil)
+}
+
+// NewMetricsServiceWithLogger builds a metrics service that surfaces serve
+// errors through the supplied logger. A nil logger falls back to a default
+// JSON error-level logger so failures still reach stdout.
+func NewMetricsServiceWithLogger(metrics *Metrics, logger *Logger) *MetricsService {
+	if logger == nil {
+		logger = NewLogger("error", "json").WithComponent("metrics_service")
+	}
 	return &MetricsService{
 		metrics: metrics,
+		logger:  logger,
 	}
 }
 
@@ -62,8 +76,10 @@ func (s *MetricsService) Start(ctx context.Context, cfg *config.Config) error {
 	s.server = server
 	s.address = listener.Addr().String()
 
+	logger := s.logger
 	go func() {
 		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Error("metrics server serve failed", "error", err)
 			_ = server.Close()
 		}
 	}()

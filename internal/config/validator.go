@@ -1,4 +1,3 @@
-// internal/config/validator.go
 package config
 
 import (
@@ -7,14 +6,13 @@ import (
 	"os"
 )
 
-// Validate validates the configuration
+// Validate validates the configuration. As a side effect, it populates an
+// empty NodeID from the hostname.
 func Validate(cfg *Config) error {
-	// Validate mode
 	if cfg.Mode != ModeBacked && cfg.Mode != ModeIndependent {
 		return fmt.Errorf("invalid mode: %s (must be 'backed' or 'independent')", cfg.Mode)
 	}
 
-	// Set NodeID if empty
 	if cfg.NodeID == "" {
 		hostname, err := os.Hostname()
 		if err != nil {
@@ -23,7 +21,6 @@ func Validate(cfg *Config) error {
 		cfg.NodeID = hostname
 	}
 
-	// Validate cache settings
 	if cfg.Cache.MaxSize <= 0 {
 		return errors.New("cache.max_size must be positive")
 	}
@@ -32,14 +29,22 @@ func Validate(cfg *Config) error {
 		return errors.New("cache.default_ttl cannot be negative")
 	}
 
-	// Validate gossip settings
+	if cfg.Cache.MaxKeySize < 0 {
+		return errors.New("cache.max_key_size cannot be negative")
+	}
+	if cfg.Cache.MaxValueSize < 0 {
+		return errors.New("cache.max_value_size cannot be negative")
+	}
+
 	if cfg.Gossip.Fanout <= 0 {
 		return errors.New("gossip.fanout must be positive")
 	}
 
-	// Validate network ports
 	if cfg.Network.TCPPort <= 0 || cfg.Network.TCPPort > 65535 {
 		return fmt.Errorf("invalid tcp_port: %d", cfg.Network.TCPPort)
+	}
+	if cfg.Network.UDPPort <= 0 || cfg.Network.UDPPort > 65535 {
+		return fmt.Errorf("invalid udp_port: %d", cfg.Network.UDPPort)
 	}
 
 	return nil

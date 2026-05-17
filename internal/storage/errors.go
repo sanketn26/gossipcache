@@ -3,7 +3,8 @@ package storage
 import "errors"
 
 var (
-	ErrNotFound    = errors.New("entry not found")
-	ErrClosed      = errors.New("storage closed")
-	ErrKeyNotFound = errors.New("key not found")
+	ErrClosed        = errors.New("storage closed")
+	ErrKeyNotFound   = errors.New("key not found")
+	ErrKeyTooLarge   = errors.New("key too large")
+	ErrValueTooLarge = errors.New("value too large")
 )

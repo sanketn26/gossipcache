@@ -65,7 +65,7 @@ func BenchmarkCacheParallelGetSet(b *testing.B) {
 func newBenchmarkCache(b *testing.B) *cache.Manager {
 	b.Helper()
 
-	store, err := memory.New(1<<30, "lru")
+	store, err := memory.New(memory.Options{MaxSize: 1 << 30, EvictionPolicy: "lru"})
 	if err != nil {
 		b.Fatalf("memory.New: %v", err)
 	}

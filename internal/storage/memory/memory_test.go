@@ -13,12 +13,26 @@ import (
 	"github.com/sanketn26/gossipcache/internal/storage"
 )
 
-func TestMemoryStorageSetGetReturnsCopy(t *testing.T) {
-	store, err := New(1<<20, "lru")
+func newTestStorage(t *testing.T, opts Options) *MemoryStorage {
+	t.Helper()
+	if opts.MaxSize == 0 {
+		opts.MaxSize = 1 << 20
+	}
+	if opts.EvictionPolicy == "" {
+		opts.EvictionPolicy = "lru"
+	}
+	store, err := New(opts)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	defer store.Close()
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
+	return store
+}
+
+func TestMemoryStorageSetGetReturnsCopy(t *testing.T) {
+	store := newTestStorage(t, Options{})
 
 	ctx := context.Background()
 	original := []byte("value1")
@@ -50,11 +64,8 @@ func TestMemoryStorageSetGetReturnsCopy(t *testing.T) {
 }
 
 func TestMemoryStorageMissingExpiredDeleteAndStats(t *testing.T) {
-	store, err := New(1<<20, "lru")
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	defer store.Close()
+	clock := newFakeClock(time.Unix(1_700_000_000, 0))
+	store := newTestStorage(t, Options{Clock: clock})
 
 	ctx := context.Background()
 	if _, err := store.Get(ctx, "missing"); !errors.Is(err, storage.ErrKeyNotFound) {
@@ -64,7 +75,7 @@ func TestMemoryStorageMissingExpiredDeleteAndStats(t *testing.T) {
 	if err := store.Set(ctx, "short", []byte("value"), 20*time.Millisecond); err != nil {
 		t.Fatalf("Set short: %v", err)
 	}
-	time.Sleep(30 * time.Millisecond)
+	clock.Advance(30 * time.Millisecond)
 
 	if _, err := store.Get(ctx, "short"); !errors.Is(err, storage.ErrKeyNotFound) {
 		t.Fatalf("Get expired error = %v, want ErrKeyNotFound", err)
@@ -93,15 +104,16 @@ func TestMemoryStorageMissingExpiredDeleteAndStats(t *testing.T) {
 }
 
 func TestMemoryStorageGetMultiSetMultiKeysAndClose(t *testing.T) {
-	store, err := New(1<<20, "lru")
+	clock := newFakeClock(time.Unix(1_700_000_000, 0))
+	store, err := New(Options{MaxSize: 1 << 20, EvictionPolicy: "lru", Clock: clock})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 
 	ctx := context.Background()
 	entries := map[string]*storage.Entry{
-		"a": {Key: "a", Value: []byte("one"), ExpiresAt: time.Now().Add(time.Minute)},
-		"b": {Key: "b", Value: []byte("two"), ExpiresAt: time.Now().Add(time.Minute)},
+		"a": {Key: "a", Value: []byte("one"), ExpiresAt: clock.Now().Add(time.Minute)},
+		"b": {Key: "b", Value: []byte("two"), ExpiresAt: clock.Now().Add(time.Minute)},
 	}
 	if err := store.SetMulti(ctx, entries); err != nil {
 		t.Fatalf("SetMulti: %v", err)
@@ -138,11 +150,7 @@ func TestMemoryStorageGetMultiSetMultiKeysAndClose(t *testing.T) {
 }
 
 func TestMemoryStorageLRUEviction(t *testing.T) {
-	store, err := New(40, "lru")
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	defer store.Close()
+	store := newTestStorage(t, Options{MaxSize: 40})
 
 	ctx := context.Background()
 	if err := store.Set(ctx, "a", []byte(strings.Repeat("a", 15)), time.Minute); err != nil {
@@ -181,7 +189,7 @@ func TestMemoryStorageLRUEviction(t *testing.T) {
 }
 
 func TestMemoryStorageRejectsUnsupportedEvictionPolicy(t *testing.T) {
-	_, err := New(1<<20, "fifo")
+	_, err := New(Options{MaxSize: 1 << 20, EvictionPolicy: "fifo"})
 	if err == nil {
 		t.Fatal("New returned nil error, want unsupported eviction policy")
 	}
@@ -191,11 +199,7 @@ func TestMemoryStorageRejectsUnsupportedEvictionPolicy(t *testing.T) {
 }
 
 func TestMemoryStorageConcurrentAccess(t *testing.T) {
-	store, err := New(1<<20, "lru")
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	defer store.Close()
+	store := newTestStorage(t, Options{})
 
 	ctx := context.Background()
 	var wg sync.WaitGroup
@@ -217,6 +221,116 @@ func TestMemoryStorageConcurrentAccess(t *testing.T) {
 		}(worker)
 	}
 	wg.Wait()
+}
+
+func TestMemoryStorageRejectsOversizedKey(t *testing.T) {
+	store := newTestStorage(t, Options{MaxKeySize: 4})
+
+	ctx := context.Background()
+	err := store.Set(ctx, "too-long-key", []byte("x"), time.Minute)
+	if !errors.Is(err, storage.ErrKeyTooLarge) {
+		t.Fatalf("Set oversized key error = %v, want ErrKeyTooLarge", err)
+	}
+
+	entries := map[string]*storage.Entry{
+		"too-long-key": {Key: "too-long-key", Value: []byte("x"), ExpiresAt: time.Now().Add(time.Minute)},
+	}
+	if err := store.SetMulti(ctx, entries); !errors.Is(err, storage.ErrKeyTooLarge) {
+		t.Fatalf("SetMulti oversized key error = %v, want ErrKeyTooLarge", err)
+	}
+}
+
+func TestMemoryStorageRejectsOversizedValue(t *testing.T) {
+	store := newTestStorage(t, Options{MaxValueSize: 4})
+
+	ctx := context.Background()
+	err := store.Set(ctx, "k", []byte("too long"), time.Minute)
+	if !errors.Is(err, storage.ErrValueTooLarge) {
+		t.Fatalf("Set oversized value error = %v, want ErrValueTooLarge", err)
+	}
+}
+
+func TestMemoryStorageZeroLimitsDisableEnforcement(t *testing.T) {
+	store := newTestStorage(t, Options{MaxKeySize: 0, MaxValueSize: 0})
+
+	ctx := context.Background()
+	longKey := strings.Repeat("k", 1024)
+	longValue := bytes.Repeat([]byte("v"), 1<<16)
+	if err := store.Set(ctx, longKey, longValue, time.Minute); err != nil {
+		t.Fatalf("Set with zero limits returned error: %v", err)
+	}
+}
+
+func TestMemoryStorageStatsSizeMatchesSetDeleteOverwriteEvict(t *testing.T) {
+	clock := newFakeClock(time.Unix(1_700_000_000, 0))
+	store := newTestStorage(t, Options{MaxSize: 100, Clock: clock})
+
+	ctx := context.Background()
+	if err := store.Set(ctx, "k1", []byte("v1"), time.Minute); err != nil {
+		t.Fatalf("Set k1: %v", err)
+	}
+	want := int64(len("k1") + len("v1"))
+	if got := mustStats(t, store).Size; got != want {
+		t.Fatalf("after Set, Size = %d, want %d", got, want)
+	}
+
+	if err := store.Set(ctx, "k1", []byte("longer"), time.Minute); err != nil {
+		t.Fatalf("overwrite k1: %v", err)
+	}
+	want = int64(len("k1") + len("longer"))
+	if got := mustStats(t, store).Size; got != want {
+		t.Fatalf("after overwrite, Size = %d, want %d", got, want)
+	}
+
+	if err := store.Delete(ctx, "k1"); err != nil {
+		t.Fatalf("Delete k1: %v", err)
+	}
+	if got := mustStats(t, store).Size; got != 0 {
+		t.Fatalf("after Delete, Size = %d, want 0", got)
+	}
+
+	if err := store.Delete(ctx, "absent"); err != nil {
+		t.Fatalf("Delete absent: %v", err)
+	}
+	if got := mustStats(t, store).Size; got != 0 {
+		t.Fatalf("after Delete absent, Size = %d, want 0", got)
+	}
+
+	if err := store.Set(ctx, "expire", []byte("vv"), 10*time.Millisecond); err != nil {
+		t.Fatalf("Set expire: %v", err)
+	}
+	clock.Advance(time.Second)
+	if _, err := store.Get(ctx, "expire"); !errors.Is(err, storage.ErrKeyNotFound) {
+		t.Fatalf("Get expired error = %v, want ErrKeyNotFound", err)
+	}
+	if got := mustStats(t, store).Size; got != 0 {
+		t.Fatalf("after expired Get, Size = %d, want 0", got)
+	}
+
+	// Force LRU eviction: MaxSize=100, set entries totalling >100.
+	for i := 0; i < 5; i++ {
+		key := fmt.Sprintf("ek%d", i)
+		value := bytes.Repeat([]byte("x"), 40)
+		if err := store.Set(ctx, key, value, time.Minute); err != nil {
+			t.Fatalf("Set %q: %v", key, err)
+		}
+	}
+	stats := mustStats(t, store)
+	if stats.Evictions == 0 {
+		t.Fatal("expected at least one eviction")
+	}
+	if stats.Size > 100 {
+		t.Fatalf("Size = %d, want <= 100", stats.Size)
+	}
+}
+
+func mustStats(t *testing.T, store *MemoryStorage) *storage.Stats {
+	t.Helper()
+	stats, err := store.Stats(context.Background())
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	return stats
 }
 
 func sameStringSet(got, want []string) bool {

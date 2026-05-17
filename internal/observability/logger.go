@@ -1,6 +1,7 @@
 package observability
 
 import (
+	"io"
 	"log/slog"
 	"os"
 )
@@ -10,10 +11,14 @@ type Logger struct {
 	*slog.Logger
 }
 
-// NewLogger creates a new logger with the given configuration
+// NewLogger creates a new logger with the given configuration writing to stdout.
 func NewLogger(level, format string) *Logger {
-	var handler slog.Handler
+	return NewLoggerWithWriter(level, format, os.Stdout)
+}
 
+// NewLoggerWithWriter creates a logger that writes to w. Tests inject a buffer
+// to capture log output.
+func NewLoggerWithWriter(level, format string, w io.Writer) *Logger {
 	var logLevel slog.Level
 	switch level {
 	case "debug":
@@ -28,19 +33,16 @@ func NewLogger(level, format string) *Logger {
 		logLevel = slog.LevelInfo
 	}
 
-	opts := &slog.HandlerOptions{
-		Level: logLevel,
-	}
+	opts := &slog.HandlerOptions{Level: logLevel}
 
+	var handler slog.Handler
 	if format == "json" {
-		handler = slog.NewJSONHandler(os.Stdout, opts)
+		handler = slog.NewJSONHandler(w, opts)
 	} else {
-		handler = slog.NewTextHandler(os.Stdout, opts)
+		handler = slog.NewTextHandler(w, opts)
 	}
 
-	return &Logger{
-		Logger: slog.New(handler),
-	}
+	return &Logger{Logger: slog.New(handler)}
 }
 
 // WithComponent returns a logger with a component field

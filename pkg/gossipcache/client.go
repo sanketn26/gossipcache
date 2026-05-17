@@ -5,8 +5,7 @@ import (
 	"time"
 )
 
-// Cache is the main interface for cache operations
-// ISP: Interface segregation - client-facing interface
+// Cache is the public client-facing interface for cache operations.
 type Cache interface {
 	// Get retrieves a value by key
 	Get(ctx context.Context, key string) ([]byte, error)

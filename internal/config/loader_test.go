@@ -161,6 +161,80 @@ network:
 	}
 }
 
+func TestLoadEnvOverridesAllTaggedFields(t *testing.T) {
+	t.Setenv("MODE", string(ModeIndependent))
+	t.Setenv("NODE_ID", "env-node")
+	t.Setenv("ADDRESS", "127.0.0.1:1234")
+	t.Setenv("CACHE_MAX_SIZE", "4096")
+	t.Setenv("CACHE_DEFAULT_TTL", "45s")
+	t.Setenv("CACHE_EVICTION_POLICY", "lru")
+	t.Setenv("TCP_PORT", "8001")
+	t.Setenv("UDP_PORT", "8002")
+	t.Setenv("LOG_LEVEL", "debug")
+	t.Setenv("LOG_FORMAT", "text")
+	t.Setenv("METRICS_ENABLED", "false")
+	t.Setenv("METRICS_PORT", "9999")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	checks := []struct {
+		name string
+		got  any
+		want any
+	}{
+		{"Mode", cfg.Mode, ModeIndependent},
+		{"NodeID", cfg.NodeID, "env-node"},
+		{"Address", cfg.Address, "127.0.0.1:1234"},
+		{"Cache.MaxSize", cfg.Cache.MaxSize, int64(4096)},
+		{"Cache.DefaultTTL", cfg.Cache.DefaultTTL, 45 * time.Second},
+		{"Cache.EvictionPolicy", cfg.Cache.EvictionPolicy, "lru"},
+		{"Network.TCPPort", cfg.Network.TCPPort, 8001},
+		{"Network.UDPPort", cfg.Network.UDPPort, 8002},
+		{"Logging.Level", cfg.Logging.Level, "debug"},
+		{"Logging.Format", cfg.Logging.Format, "text"},
+		{"Metrics.Enabled", cfg.Metrics.Enabled, false},
+		{"Metrics.Port", cfg.Metrics.Port, 9999},
+	}
+	for _, c := range checks {
+		if c.got != c.want {
+			t.Errorf("%s = %v, want %v", c.name, c.got, c.want)
+		}
+	}
+}
+
+func TestLoadEnvWrapsParseErrors(t *testing.T) {
+	tests := []struct {
+		envVar string
+		value  string
+		name   string
+	}{
+		{envVar: "CACHE_MAX_SIZE", value: "not-an-int", name: "CACHE_MAX_SIZE"},
+		{envVar: "CACHE_DEFAULT_TTL", value: "not-a-duration", name: "CACHE_DEFAULT_TTL"},
+		{envVar: "TCP_PORT", value: "abc", name: "TCP_PORT"},
+		{envVar: "UDP_PORT", value: "abc", name: "UDP_PORT"},
+		{envVar: "METRICS_ENABLED", value: "maybe", name: "METRICS_ENABLED"},
+		{envVar: "METRICS_PORT", value: "abc", name: "METRICS_PORT"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.envVar, func(t *testing.T) {
+			t.Setenv(tt.envVar, tt.value)
+			_, err := Load("")
+			if err == nil {
+				t.Fatalf("Load returned nil error, want parse error for %s", tt.envVar)
+			}
+			if !strings.Contains(err.Error(), "load config from env") {
+				t.Errorf("error = %q, want load config from env context", err)
+			}
+			if !strings.Contains(err.Error(), tt.name) {
+				t.Errorf("error = %q, want substring %q", err, tt.name)
+			}
+		})
+	}
+}
+
 func writeConfigFile(t *testing.T, contents string) string {
 	t.Helper()
 

@@ -6,7 +6,6 @@ import (
 )
 
 // Storage defines the interface for cache storage engines.
-// SRP: Single responsibility - data storage and retrieval
 type Storage interface {
 	// Get retrieves a value by key
 	Get(ctx context.Context, key string) (*Entry, error)
@@ -51,10 +50,18 @@ type Stats struct {
 	Evictions int64
 }
 
-// IsExpired checks if entry has expired
-func (e *Entry) IsExpired() bool {
+// IsExpiredAt reports whether the entry has expired relative to now. Callers
+// that share an injected clock with storage pass it through here for
+// deterministic expiry checks.
+func (e *Entry) IsExpiredAt(now time.Time) bool {
 	if e.ExpiresAt.IsZero() {
 		return false
 	}
-	return time.Now().After(e.ExpiresAt)
+	return now.After(e.ExpiresAt)
+}
+
+// IsExpired reports whether the entry has expired against the real wall clock.
+// Prefer IsExpiredAt in code that has access to an injected clock.
+func (e *Entry) IsExpired() bool {
+	return e.IsExpiredAt(time.Now())
 }

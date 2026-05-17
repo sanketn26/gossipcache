@@ -7,8 +7,7 @@ import (
 	"sync"
 )
 
-// EvictionPolicy defines the interface for eviction policies
-// OCP: Open for extension (add new policies), closed for modification
+// EvictionPolicy decides which key to evict when capacity is exceeded.
 type EvictionPolicy interface {
 	OnAdd(key string)
 	OnAccess(key string)

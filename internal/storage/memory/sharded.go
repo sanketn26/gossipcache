@@ -9,8 +9,6 @@ import (
 
 const defaultShards = 256
 
-// shardedMap provides concurrent access to cache entries
-// DRY: Encapsulates sharding logic
 type shardedMap struct {
 	shards []*shard
 	count  int
@@ -55,20 +53,35 @@ func (sm *shardedMap) get(key string) (*storage.Entry, bool) {
 	return entry, ok
 }
 
-func (sm *shardedMap) set(key string, entry *storage.Entry) {
+// set stores entry under key and returns the byte size of any prior entry that
+// it replaced (zero if the key was new). Callers use the delta to maintain an
+// O(1) running size counter without re-walking shards.
+func (sm *shardedMap) set(key string, entry *storage.Entry) int64 {
 	s := sm.getShard(key)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	var prevSize int64
+	if prev, ok := s.entries[key]; ok {
+		prevSize = entrySize(prev)
+	}
 	s.entries[key] = entry
+	return prevSize
 }
 
-func (sm *shardedMap) delete(key string) {
+// delete removes key and returns the byte size of the removed entry, or zero
+// if the key was absent.
+func (sm *shardedMap) delete(key string) int64 {
 	s := sm.getShard(key)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	prev, ok := s.entries[key]
+	if !ok {
+		return 0
+	}
 	delete(s.entries, key)
+	return entrySize(prev)
 }
 
 func (sm *shardedMap) keys() []string {
@@ -93,4 +106,11 @@ func (sm *shardedMap) len() int {
 		s.mu.RUnlock()
 	}
 	return total
+}
+
+func entrySize(e *storage.Entry) int64 {
+	if e == nil {
+		return 0
+	}
+	return int64(len(e.Key) + len(e.Value))
 }

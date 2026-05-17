@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -10,16 +11,40 @@ import (
 	"github.com/sanketn26/gossipcache/internal/storage"
 )
 
-// MemoryStorage implements in-memory cache storage
-// SRP: Responsible only for storing and retrieving data
+// Clock returns the current time. Tests inject a fake clock to make TTL
+// behavior deterministic without sleeping.
+type Clock interface {
+	Now() time.Time
+}
+
+type realClock struct{}
+
+func (realClock) Now() time.Time { return time.Now() }
+
+// Options configures a MemoryStorage instance. Zero values for MaxKeySize and
+// MaxValueSize disable enforcement of those limits.
+type Options struct {
+	MaxSize        int64
+	EvictionPolicy string
+	MaxKeySize     int
+	MaxValueSize   int
+	Clock          Clock
+}
+
+// MemoryStorage is an in-memory cache storage engine with optional TTL
+// expiration and pluggable eviction policy.
 type MemoryStorage struct {
-	data     *shardedMap
-	stats    *storageStats
-	maxSize  int64
-	eviction EvictionPolicy
-	closed   atomic.Bool
-	closeCh  chan struct{}
-	wg       sync.WaitGroup
+	data         *shardedMap
+	stats        *storageStats
+	maxSize      int64
+	maxKeySize   int
+	maxValueSize int
+	eviction     EvictionPolicy
+	clock        Clock
+	size         atomic.Int64
+	closed       atomic.Bool
+	closeCh      chan struct{}
+	wg           sync.WaitGroup
 }
 
 type storageStats struct {
@@ -28,22 +53,29 @@ type storageStats struct {
 	evictions atomic.Int64
 }
 
-// New creates a new MemoryStorage
-func New(maxSize int64, evictionPolicy string) (*MemoryStorage, error) {
-	eviction, err := newEvictionPolicy(evictionPolicy)
+// New creates a new MemoryStorage from opts.
+func New(opts Options) (*MemoryStorage, error) {
+	eviction, err := newEvictionPolicy(opts.EvictionPolicy)
 	if err != nil {
 		return nil, err
 	}
 
-	ms := &MemoryStorage{
-		data:     newShardedMap(256),
-		stats:    &storageStats{},
-		maxSize:  maxSize,
-		eviction: eviction,
-		closeCh:  make(chan struct{}),
+	clock := opts.Clock
+	if clock == nil {
+		clock = realClock{}
 	}
 
-	// Start expiration goroutine
+	ms := &MemoryStorage{
+		data:         newShardedMap(256),
+		stats:        &storageStats{},
+		maxSize:      opts.MaxSize,
+		maxKeySize:   opts.MaxKeySize,
+		maxValueSize: opts.MaxValueSize,
+		eviction:     eviction,
+		clock:        clock,
+		closeCh:      make(chan struct{}),
+	}
+
 	ms.wg.Add(1)
 	go ms.expirationLoop()
 
@@ -61,9 +93,12 @@ func (ms *MemoryStorage) Get(ctx context.Context, key string) (*storage.Entry, e
 		return nil, storage.ErrKeyNotFound
 	}
 
-	// Check expiration
-	if entry.IsExpired() {
-		ms.data.delete(key)
+	if entry.IsExpiredAt(ms.clock.Now()) {
+		removed := ms.data.delete(key)
+		if removed > 0 {
+			ms.size.Add(-removed)
+			ms.eviction.OnRemove(key)
+		}
 		ms.stats.misses.Add(1)
 		return nil, storage.ErrKeyNotFound
 	}
@@ -79,7 +114,14 @@ func (ms *MemoryStorage) Set(ctx context.Context, key string, value []byte, ttl 
 		return storage.ErrClosed
 	}
 
-	now := time.Now()
+	if ms.maxKeySize > 0 && len(key) > ms.maxKeySize {
+		return fmt.Errorf("%w: %d bytes (limit %d)", storage.ErrKeyTooLarge, len(key), ms.maxKeySize)
+	}
+	if ms.maxValueSize > 0 && len(value) > ms.maxValueSize {
+		return fmt.Errorf("%w: %d bytes (limit %d)", storage.ErrValueTooLarge, len(value), ms.maxValueSize)
+	}
+
+	now := ms.clock.Now()
 	entry := &storage.Entry{
 		Key:       key,
 		Value:     append([]byte(nil), value...),
@@ -91,10 +133,12 @@ func (ms *MemoryStorage) Set(ctx context.Context, key string, value []byte, ttl 
 		entry.ExpiresAt = now.Add(ttl)
 	}
 
-	ms.data.set(key, entry)
+	newSize := entrySize(entry)
+	prevSize := ms.data.set(key, entry)
+	ms.size.Add(newSize - prevSize)
 	ms.eviction.OnAdd(key)
 
-	for ms.shouldEvict() {
+	for ms.size.Load() > ms.maxSize {
 		if err := ms.evict(); err != nil {
 			return err
 		}
@@ -108,8 +152,11 @@ func (ms *MemoryStorage) Delete(ctx context.Context, key string) error {
 		return storage.ErrClosed
 	}
 
-	ms.data.delete(key)
-	ms.eviction.OnRemove(key)
+	removed := ms.data.delete(key)
+	if removed > 0 {
+		ms.size.Add(-removed)
+		ms.eviction.OnRemove(key)
+	}
 
 	return nil
 }
@@ -128,8 +175,15 @@ func (ms *MemoryStorage) GetMulti(ctx context.Context, keys []string) (map[strin
 }
 
 func (ms *MemoryStorage) SetMulti(ctx context.Context, entries map[string]*storage.Entry) error {
+	now := ms.clock.Now()
 	for key, entry := range entries {
-		ttl := time.Until(entry.ExpiresAt)
+		var ttl time.Duration
+		if !entry.ExpiresAt.IsZero() {
+			ttl = entry.ExpiresAt.Sub(now)
+			if ttl <= 0 {
+				continue
+			}
+		}
 		if err := ms.Set(ctx, key, entry.Value, ttl); err != nil {
 			return err
 		}
@@ -148,7 +202,7 @@ func (ms *MemoryStorage) Keys(ctx context.Context) ([]string, error) {
 func (ms *MemoryStorage) Stats(ctx context.Context) (*storage.Stats, error) {
 	return &storage.Stats{
 		Keys:      int64(ms.data.len()),
-		Size:      ms.currentSize(),
+		Size:      ms.size.Load(),
 		Hits:      ms.stats.hits.Load(),
 		Misses:    ms.stats.misses.Load(),
 		Evictions: ms.stats.evictions.Load(),
@@ -157,7 +211,7 @@ func (ms *MemoryStorage) Stats(ctx context.Context) (*storage.Stats, error) {
 
 func (ms *MemoryStorage) Close() error {
 	if ms.closed.Swap(true) {
-		return nil // Already closed
+		return nil
 	}
 
 	close(ms.closeCh)
@@ -166,32 +220,16 @@ func (ms *MemoryStorage) Close() error {
 	return nil
 }
 
-func (ms *MemoryStorage) shouldEvict() bool {
-	return ms.currentSize() > ms.maxSize
-}
-
-func (ms *MemoryStorage) currentSize() int64 {
-	// Approximate size calculation
-	keys := ms.data.keys()
-	var size int64
-
-	for _, key := range keys {
-		entry, ok := ms.data.get(key)
-		if ok {
-			size += int64(len(key) + len(entry.Value))
-		}
-	}
-
-	return size
-}
-
 func (ms *MemoryStorage) evict() error {
 	victim := ms.eviction.SelectVictim()
 	if victim == "" {
-		return fmt.Errorf("no victim to evict")
+		return errors.New("no victim to evict")
 	}
 
-	ms.data.delete(victim)
+	removed := ms.data.delete(victim)
+	if removed > 0 {
+		ms.size.Add(-removed)
+	}
 	ms.eviction.OnRemove(victim)
 	ms.stats.evictions.Add(1)
 
@@ -215,13 +253,17 @@ func (ms *MemoryStorage) expirationLoop() {
 }
 
 func (ms *MemoryStorage) removeExpired() {
+	now := ms.clock.Now()
 	keys := ms.data.keys()
 
 	for _, key := range keys {
 		entry, ok := ms.data.get(key)
-		if ok && entry.IsExpired() {
-			ms.data.delete(key)
-			ms.eviction.OnRemove(key)
+		if ok && entry.IsExpiredAt(now) {
+			removed := ms.data.delete(key)
+			if removed > 0 {
+				ms.size.Add(-removed)
+				ms.eviction.OnRemove(key)
+			}
 		}
 	}
 }

@@ -80,6 +80,34 @@ func TestValidateRejectsInvalidConfig(t *testing.T) {
 			},
 			wantErr: "invalid tcp_port",
 		},
+		{
+			name: "udp port too low",
+			mutate: func(cfg *Config) {
+				cfg.Network.UDPPort = 0
+			},
+			wantErr: "invalid udp_port",
+		},
+		{
+			name: "udp port too high",
+			mutate: func(cfg *Config) {
+				cfg.Network.UDPPort = 65536
+			},
+			wantErr: "invalid udp_port",
+		},
+		{
+			name: "negative max_key_size",
+			mutate: func(cfg *Config) {
+				cfg.Cache.MaxKeySize = -1
+			},
+			wantErr: "cache.max_key_size cannot be negative",
+		},
+		{
+			name: "negative max_value_size",
+			mutate: func(cfg *Config) {
+				cfg.Cache.MaxValueSize = -1
+			},
+			wantErr: "cache.max_value_size cannot be negative",
+		},
 	}
 
 	for _, tt := range tests {
