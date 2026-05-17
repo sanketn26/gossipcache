@@ -1,3 +1,12 @@
+//go:build example
+
+// Package main is an example binary that runs a gossipcache instance with the
+// Prometheus metrics endpoint enabled. It is excluded from the default build
+// so library consumers do not get a binary they did not ask for. Build it with
+// the `example` build tag:
+//
+//	go build -tags example -o bin/gossipcache-example ./examples/server
+//	go run -tags example ./examples/server -config config.yaml
 package main
 
 import (
@@ -10,11 +19,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sanketn26/gossipcache/internal/cache"
 	"github.com/sanketn26/gossipcache/internal/config"
 	"github.com/sanketn26/gossipcache/internal/observability"
-	"github.com/sanketn26/gossipcache/internal/storage/memory"
 	"github.com/sanketn26/gossipcache/pkg/gossipcache"
+	"github.com/sanketn26/gossipcache/pkg/gossipcache/inmemory"
 )
 
 func main() {
@@ -27,7 +35,7 @@ func main() {
 	}
 
 	logger := observability.NewLogger(cfg.Logging.Level, cfg.Logging.Format)
-	logger.Info("starting gossipcache", "node_id", cfg.NodeID, "mode", cfg.Mode)
+	logger.Info("starting gossipcache example", "node_id", cfg.NodeID, "mode", cfg.Mode)
 
 	metrics := observability.NewMetrics(nil)
 
@@ -44,29 +52,26 @@ func main() {
 		os.Exit(1)
 	}
 
-	store, err := memory.New(memory.Options{
+	cache, err := inmemory.New(inmemory.Options{
 		MaxSize:        cfg.Cache.MaxSize,
+		DefaultTTL:     cfg.Cache.DefaultTTL,
 		EvictionPolicy: cfg.Cache.EvictionPolicy,
 		MaxKeySize:     cfg.Cache.MaxKeySize,
 		MaxValueSize:   cfg.Cache.MaxValueSize,
+		Metrics:        metrics,
 	})
 	if err != nil {
-		logger.Error("create memory storage", "error", err)
+		logger.Error("create cache", "error", err)
 		shutdown(ctx, registry, cfg, logger)
 		os.Exit(1)
 	}
-
-	var cacheManager gossipcache.Cache = cache.NewManager(store, &cache.CacheConfig{
-		DefaultTTL: cfg.Cache.DefaultTTL,
-		Metrics:    metrics,
-	})
 
 	logger.Info("cache ready", "max_size", cfg.Cache.MaxSize, "default_ttl", cfg.Cache.DefaultTTL)
 
 	waitForSignal()
 	logger.Info("shutting down")
 
-	if err := cacheManager.Close(); err != nil {
+	if err := cache.Close(); err != nil {
 		logger.Error("close cache", "error", err)
 	}
 	shutdown(ctx, registry, cfg, logger)

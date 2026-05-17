@@ -13,11 +13,12 @@ BLOCK_PROFILE=block.prof
 TRACE_FILE=trace.out
 
 # Directories
-CMD_DIR=./cmd
+EXAMPLE_DIR=./examples/server
 PKG_DIR=./pkg
 INTERNAL_DIR=./internal
 BUILD_DIR=./build
 BIN_DIR=./bin
+EXAMPLE_TAGS=example
 
 # Colors for output
 CYAN=\033[0;36m
@@ -34,27 +35,27 @@ help:
 ## all: Run fmt, vet, lint, test and build
 all: fmt vet lint test build
 
-## build: Build the application binary
+## build: Build the example binary (library has no default binary)
 build:
-	@echo "$(CYAN)Building $(BINARY_NAME)...$(NC)"
+	@echo "$(CYAN)Building example binary $(BINARY_NAME)...$(NC)"
 	@mkdir -p $(BIN_DIR)
-	@$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BIN_DIR)/$(BINARY_NAME) $(CMD_DIR)/...
+	@$(GO) build $(GOFLAGS) -tags $(EXAMPLE_TAGS) $(LDFLAGS) -o $(BIN_DIR)/$(BINARY_NAME) $(EXAMPLE_DIR)
 	@echo "$(GREEN)✓ Build complete: $(BIN_DIR)/$(BINARY_NAME)$(NC)"
 
-## build-all: Build for multiple platforms
+## build-all: Build the example binary for multiple platforms
 build-all:
-	@echo "$(CYAN)Building for multiple platforms...$(NC)"
+	@echo "$(CYAN)Building example for multiple platforms...$(NC)"
 	@mkdir -p $(BIN_DIR)
-	@GOOS=linux GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BIN_DIR)/$(BINARY_NAME)-linux-amd64 $(CMD_DIR)/...
-	@GOOS=darwin GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BIN_DIR)/$(BINARY_NAME)-darwin-amd64 $(CMD_DIR)/...
-	@GOOS=darwin GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(BIN_DIR)/$(BINARY_NAME)-darwin-arm64 $(CMD_DIR)/...
-	@GOOS=windows GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BIN_DIR)/$(BINARY_NAME)-windows-amd64.exe $(CMD_DIR)/...
+	@GOOS=linux GOARCH=amd64 $(GO) build -tags $(EXAMPLE_TAGS) $(LDFLAGS) -o $(BIN_DIR)/$(BINARY_NAME)-linux-amd64 $(EXAMPLE_DIR)
+	@GOOS=darwin GOARCH=amd64 $(GO) build -tags $(EXAMPLE_TAGS) $(LDFLAGS) -o $(BIN_DIR)/$(BINARY_NAME)-darwin-amd64 $(EXAMPLE_DIR)
+	@GOOS=darwin GOARCH=arm64 $(GO) build -tags $(EXAMPLE_TAGS) $(LDFLAGS) -o $(BIN_DIR)/$(BINARY_NAME)-darwin-arm64 $(EXAMPLE_DIR)
+	@GOOS=windows GOARCH=amd64 $(GO) build -tags $(EXAMPLE_TAGS) $(LDFLAGS) -o $(BIN_DIR)/$(BINARY_NAME)-windows-amd64.exe $(EXAMPLE_DIR)
 	@echo "$(GREEN)✓ Cross-platform build complete$(NC)"
 
-## run: Run the application
+## run: Run the example binary
 run:
-	@echo "$(CYAN)Running $(BINARY_NAME)...$(NC)"
-	@$(GO) run $(CMD_DIR)/...
+	@echo "$(CYAN)Running example $(BINARY_NAME)...$(NC)"
+	@$(GO) run -tags $(EXAMPLE_TAGS) $(EXAMPLE_DIR)
 
 ## test: Run all tests
 test:
@@ -182,10 +183,10 @@ clean:
 	@$(GO) clean
 	@echo "$(GREEN)✓ Clean complete$(NC)"
 
-## install: Install the binary to $GOPATH/bin
+## install: Install the example binary to $GOPATH/bin
 install:
-	@echo "$(CYAN)Installing $(BINARY_NAME)...$(NC)"
-	@$(GO) install $(LDFLAGS) $(CMD_DIR)/...
+	@echo "$(CYAN)Installing example binary $(BINARY_NAME)...$(NC)"
+	@$(GO) install -tags $(EXAMPLE_TAGS) $(LDFLAGS) $(EXAMPLE_DIR)
 	@echo "$(GREEN)✓ Installed to $(GOPATH)/bin/$(BINARY_NAME)$(NC)"
 
 ## install-lint: Install golangci-lint

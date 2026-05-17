@@ -409,7 +409,7 @@ FROM golang:1.21-alpine AS builder
 WORKDIR /build
 COPY . .
 RUN go mod download
-RUN CGO_ENABLED=0 GOOS=linux go build -o gossipcache ./cmd/gossipcache
+RUN CGO_ENABLED=0 GOOS=linux go build -tags example -o gossipcache ./examples/server
 
 FROM alpine:latest
 

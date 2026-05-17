@@ -23,7 +23,70 @@ GossipCache is a high-performance, distributed key-value cache designed to provi
 
 ## Quick Start
 
-*Coming soon - project is in early development*
+GossipCache is primarily a Go library. Import it and construct an in-memory
+cache through the public constructor:
+
+```bash
+go get github.com/sanketn26/gossipcache
+```
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "time"
+
+    "github.com/sanketn26/gossipcache/pkg/gossipcache"
+    "github.com/sanketn26/gossipcache/pkg/gossipcache/inmemory"
+)
+
+func main() {
+    cache, err := inmemory.New(inmemory.Options{
+        MaxSize:    1 << 30,           // 1 GiB soft cap
+        DefaultTTL: 5 * time.Minute,
+    })
+    if err != nil {
+        panic(err)
+    }
+    defer cache.Close()
+
+    ctx := context.Background()
+    if err := cache.Set(ctx, "hello", []byte("world"), 0); err != nil {
+        panic(err)
+    }
+
+    value, err := cache.Get(ctx, "hello")
+    if err != nil {
+        panic(err)
+    }
+    fmt.Println(string(value))
+
+    // Public sentinels work with errors.Is across the package boundary.
+    if _, err := cache.Get(ctx, "missing"); err != nil {
+        fmt.Println(err, "==", gossipcache.ErrKeyNotFound)
+    }
+}
+```
+
+### Optional example binary
+
+A runnable example with metrics, config loading, and graceful shutdown lives
+under [`examples/server`](examples/server). It is excluded from the default
+build via the `example` build tag so library consumers do not pull in CLI
+dependencies:
+
+```bash
+# Build the example binary
+go build -tags example -o bin/gossipcache-example ./examples/server
+
+# Or run directly
+go run -tags example ./examples/server -config config.yaml
+```
+
+The Makefile targets `make build`, `make run`, and `make install` all build
+this example.
 
 ## Documentation
 
