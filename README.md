@@ -124,7 +124,9 @@ See [docs/README.md](docs/README.md) for full documentation index.
 
 ## Project Status
 
-⚠️ **Early Development** - This project is in initial planning and design phase. The architecture and specifications are being finalized before implementation begins.
+⚠️ **Early Development** — The local in-memory cache (sharded storage, LRU eviction, TTL, metrics, config) and a Redis backing-store adapter are implemented and tested. The distributed layer (gossip, membership, anti-entropy) is not built yet, so the features above describe the target design, not current capability.
+
+See [docs/STATUS.md](docs/STATUS.md) for the authoritative breakdown of what is implemented, in progress, and out of scope for v1.
 
 ## Contributing
 

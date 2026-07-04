@@ -15,9 +15,6 @@ This is an early-stage project. The codebase structure and commands below will b
 ## Development Commands
 
 ```bash
-# Initialize Go module (if not already done)
-go mod init github.com/sanketnaik/gossipcache
-
 # Run tests
 go test ./...
 

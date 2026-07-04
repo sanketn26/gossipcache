@@ -6,6 +6,8 @@ Welcome to the GossipCache documentation. This directory contains comprehensive 
 
 ### Core Documentation
 
+- **[STATUS.md](STATUS.md)** - **Single source of truth** for implementation status and the v1 scope contract; design docs describe the target, this describes reality
+- **[adr/](adr/)** - Architecture decision records (ADR-0001: gossip transport build-vs-buy)
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - High-level system architecture, design decisions, and component overview
 - **[TECHNICAL_SPEC.md](TECHNICAL_SPEC.md)** - Detailed technical specifications including data structures, protocols, APIs, and interfaces
 - **[DEPLOYMENT.md](DEPLOYMENT.md)** - Deployment guides for EC2, Docker, and Kubernetes environments

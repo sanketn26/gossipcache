@@ -1,6 +1,6 @@
 # Phase 2: Backed Mode Implementation
 
-**Goal**: Implement backed mode with Redis support, metadata gossip, and change detection/pull mechanism.
+**Goal**: Implement backed mode with Redis and Memcached support, metadata gossip, and change detection/pull mechanism.
 
 **Duration**: 3-4 weeks
 
@@ -10,12 +10,15 @@
 
 ## Overview
 
-Phase 2 builds the distributed cache functionality for backed mode. We'll implement the backing store abstraction starting with Redis, create the gossip protocol for metadata propagation, and implement the pull-based data synchronization mechanism.
+Phase 2 builds the distributed cache functionality for backed mode. We'll implement the backing store abstraction with two concrete adapters — Redis (covers Valkey via API compatibility) and Memcached — to stress-test the interface against fundamentally different stores. On top of that we build the gossip protocol for metadata propagation and the pull-based data synchronization mechanism.
+
+Implementing Redis and Memcached together in Phase 2 is deliberate: Redis offers atomic Lua-scripted versioning, while Memcached has no Lua and no native version field. Forcing the `BackingStore` interface to accommodate both up front prevents Redis-shaped assumptions from leaking into the abstraction before Postgres/MySQL arrive in Phase 4.
 
 ## Objectives
 
-- [ ] Backing store abstraction and interface
-- [ ] Redis connector with connection pooling
+- [ ] Backing store abstraction and interface (with TTL support)
+- [ ] Redis connector with connection pooling, atomic version+TTL via Lua (covers Valkey)
+- [ ] Memcached connector with `cas`-based versioning and exptime-quirk handling
 - [ ] Metadata gossip protocol implementation
 - [ ] Change detection and pull mechanism
 - [ ] Singleflight pattern for thundering herd prevention
@@ -41,8 +44,11 @@ gossipcache/
 │   ├── backingstore/
 │   │   ├── backingstore.go        # Interface
 │   │   ├── redis/
-│   │   │   ├── redis.go           # Redis implementation
+│   │   │   ├── redis.go           # Redis implementation (covers Valkey)
 │   │   │   └── redis_test.go
+│   │   ├── memcached/
+│   │   │   ├── memcached.go       # Memcached implementation (cas-based versioning)
+│   │   │   └── memcached_test.go
 │   │   └── mock/
 │   │       └── mock_backingstore.go
 │   ├── gossip/
@@ -88,20 +94,22 @@ import (
 // BackingStore defines the interface for persistent storage backends
 // ISP: Focused interface for backing store operations
 type BackingStore interface {
-    // Get retrieves a value and its version
-    Get(ctx context.Context, key string) (value []byte, version int64, err error)
+    // Get retrieves a value, its version, and its expiration time.
+    // A zero ExpiresAt in the returned Entry means no expiration.
+    Get(ctx context.Context, key string) (entry *Entry, err error)
 
-    // Set stores a value and returns the new version
-    Set(ctx context.Context, key string, value []byte) (version int64, err error)
+    // Set stores a value with an optional TTL and returns the new version.
+    // ttl == 0 means no expiration. ttl < 0 is invalid.
+    Set(ctx context.Context, key string, value []byte, ttl time.Duration) (version int64, err error)
 
-    // Delete removes a key
+    // Delete removes a key. Delete is idempotent — deleting a missing key returns nil.
     Delete(ctx context.Context, key string) error
 
-    // GetMulti retrieves multiple keys
+    // GetMulti retrieves multiple keys. Missing keys are omitted from the result.
     GetMulti(ctx context.Context, keys []string) (map[string]*Entry, error)
 
-    // SetMulti stores multiple entries
-    SetMulti(ctx context.Context, entries map[string][]byte) (map[string]int64, error)
+    // SetMulti stores multiple entries, each with its own TTL.
+    SetMulti(ctx context.Context, entries map[string]SetRequest) (map[string]int64, error)
 
     // Ping checks connectivity
     Ping(ctx context.Context) error
@@ -110,16 +118,25 @@ type BackingStore interface {
     Close() error
 }
 
-// Entry represents a backing store entry
+// Entry represents a backing store entry.
+// ExpiresAt is the absolute expiration time; zero value means no expiration.
 type Entry struct {
-    Key     string
-    Value   []byte
-    Version int64
+    Key       string
+    Value     []byte
+    Version   int64
+    ExpiresAt time.Time
+}
+
+// SetRequest carries the value and TTL for a single key in SetMulti.
+// TTL == 0 means no expiration.
+type SetRequest struct {
+    Value []byte
+    TTL   time.Duration
 }
 
 // Config holds backing store configuration
 type Config struct {
-    Type     string // "redis", "postgres", etc.
+    Type     string // "redis", "memcached", "postgres", etc.
     Address  string
     Database string
     Username string
@@ -128,6 +145,40 @@ type Config struct {
     Timeout  time.Duration
 }
 ```
+
+#### 1.2 Versioning Strategy Per Store
+
+The interface returns a monotonic `int64` version on every `Set`. Each adapter is responsible for producing one — the mechanism differs by store and is the main thing the interface has to stay neutral about:
+
+| Store | Versioning Mechanism |
+| --- | --- |
+| Redis / Valkey | Lua `EVAL` script does `HINCRBY version 1` + `HSET value` atomically in one round-trip |
+| Memcached | Native `cas` token from `gets`; adapter does `gets` → increment → `cas` with retry on token mismatch. Value bytes are stored as `[8-byte version][payload]` so `Get` can split them in one op |
+| Postgres / MySQL (Phase 4) | `UPDATE ... SET version = version + 1 RETURNING version` in a transaction |
+
+Test the interface against a fake plus both real adapters in Phase 2. If a future adapter cannot produce a monotonic version (e.g., a store without CAS), that is a signal to extend the interface — do not paper over it inside the adapter.
+
+#### 1.3 TTL: Backing Store Is Source of Truth
+
+The interface accepts a `ttl time.Duration` on `Set`/`SetMulti` and returns an `ExpiresAt time.Time` on `Get`/`GetMulti`. The cache layer must treat the backing store as authoritative for expiration:
+
+- On `Set(key, value, ttl)`: the adapter persists the value with the given TTL using the store's native expiration mechanism (Redis `SET EX`, Memcached `exptime`, Postgres `expires_at` column + sweeper).
+- On `Get`: if the store returns the entry, the adapter populates `ExpiresAt` from the store. If the store has already expired the key, `Get` returns `ErrKeyNotFound` — the cache treats this identically to a real miss.
+- The local cache, when populating from a backing-store pull, sets its own per-entry expiry to `min(configured_local_ttl, ExpiresAt - now)`. This guarantees a node never serves a key past the backing store's expiration, even if local TTL would have kept it longer.
+
+| TTL semantics | Meaning |
+| --- | --- |
+| `ttl == 0` | No expiration. `ExpiresAt` in returned `Entry` is the zero `time.Time`. |
+| `ttl > 0` | Key expires after `ttl` from the moment of the write. |
+| `ttl < 0` | Invalid — adapters must return an error. |
+
+Per-store mapping:
+
+| Store | TTL Mechanism |
+| --- | --- |
+| Redis / Valkey | `SET key value EX <seconds>` (sub-second TTL rounds up to 1s); or `PEXPIRE` for millisecond precision in the Lua script |
+| Memcached | `exptime` parameter. **Quirk**: ≤ 30 days = relative seconds; > 30 days = absolute Unix timestamp. Adapter must convert. |
+| Postgres / MySQL (Phase 4) | `expires_at TIMESTAMP` column; a background sweeper deletes expired rows. Reads filter `WHERE expires_at IS NULL OR expires_at > now()`. |
 
 ### Step 2: Redis Connector (Day 2-5)
 
@@ -183,49 +234,72 @@ func New(cfg *backingstore.Config) (*RedisStore, error) {
     }, nil
 }
 
-func (r *RedisStore) Get(ctx context.Context, key string) ([]byte, int64, error) {
-    // Use Redis hash to store value and version
-    // HGETALL cache:{key} -> {value: ..., version: ...}
-
+func (r *RedisStore) Get(ctx context.Context, key string) (*backingstore.Entry, error) {
+    // Use Redis hash to store value and version. PTTL gives remaining TTL in
+    // milliseconds so the cache layer can populate ExpiresAt.
     hashKey := fmt.Sprintf("cache:%s", key)
 
-    result, err := r.client.HGetAll(ctx, hashKey).Result()
+    pipe := r.client.Pipeline()
+    hgetAll := pipe.HGetAll(ctx, hashKey)
+    pttl := pipe.PTTL(ctx, hashKey)
+    if _, err := pipe.Exec(ctx); err != nil {
+        return nil, err
+    }
+
+    result, err := hgetAll.Result()
     if err != nil {
-        return nil, 0, err
+        return nil, err
     }
-
     if len(result) == 0 {
-        return nil, 0, backingstore.ErrKeyNotFound
+        return nil, backingstore.ErrKeyNotFound
     }
 
-    value := []byte(result["value"])
     version, _ := strconv.ParseInt(result["version"], 10, 64)
+    entry := &backingstore.Entry{
+        Key:     key,
+        Value:   []byte(result["value"]),
+        Version: version,
+    }
 
-    return value, version, nil
+    // PTTL returns -1 if the key has no expiration, -2 if missing.
+    if ms, err := pttl.Result(); err == nil && ms > 0 {
+        entry.ExpiresAt = time.Now().Add(time.Duration(ms) * time.Millisecond)
+    }
+    return entry, nil
 }
 
-func (r *RedisStore) Set(ctx context.Context, key string, value []byte) (int64, error) {
+func (r *RedisStore) Set(ctx context.Context, key string, value []byte, ttl time.Duration) (int64, error) {
+    if ttl < 0 {
+        return 0, fmt.Errorf("invalid negative ttl: %v", ttl)
+    }
     hashKey := fmt.Sprintf("cache:%s", key)
 
-    // Use Lua script for atomic version increment
+    // Atomic: bump version, write value, apply or clear expiration in one round-trip.
+    // ARGV[2] is TTL in milliseconds; 0 means "no expiration" (clear any existing TTL).
     script := redis.NewScript(`
         local hashKey = KEYS[1]
         local value = ARGV[1]
+        local ttlMs = tonumber(ARGV[2])
 
-        -- Get current version or start at 0
         local version = redis.call('HGET', hashKey, 'version')
         if not version then
             version = 0
         end
         version = tonumber(version) + 1
 
-        -- Set value and version
         redis.call('HSET', hashKey, 'value', value, 'version', version)
+
+        if ttlMs > 0 then
+            redis.call('PEXPIRE', hashKey, ttlMs)
+        else
+            redis.call('PERSIST', hashKey)
+        end
 
         return version
     `)
 
-    result, err := script.Run(ctx, r.client, []string{hashKey}, value).Result()
+    ttlMs := int64(ttl / time.Millisecond)
+    result, err := script.Run(ctx, r.client, []string{hashKey}, value, ttlMs).Result()
     if err != nil {
         return 0, err
     }
@@ -246,61 +320,98 @@ func (r *RedisStore) Delete(ctx context.Context, key string) error {
 func (r *RedisStore) GetMulti(ctx context.Context, keys []string) (map[string]*backingstore.Entry, error) {
     result := make(map[string]*backingstore.Entry)
 
-    // Use pipeline for efficiency
     pipe := r.client.Pipeline()
-    cmds := make(map[string]*redis.MapStringStringCmd)
+    type cmdPair struct {
+        data *redis.MapStringStringCmd
+        ttl  *redis.DurationCmd
+    }
+    cmds := make(map[string]cmdPair, len(keys))
 
     for _, key := range keys {
         hashKey := fmt.Sprintf("cache:%s", key)
-        cmds[key] = pipe.HGetAll(ctx, hashKey)
+        cmds[key] = cmdPair{
+            data: pipe.HGetAll(ctx, hashKey),
+            ttl:  pipe.PTTL(ctx, hashKey),
+        }
     }
 
     if _, err := pipe.Exec(ctx); err != nil && err != redis.Nil {
         return nil, err
     }
 
-    for key, cmd := range cmds {
-        data, err := cmd.Result()
+    now := time.Now()
+    for key, c := range cmds {
+        data, err := c.data.Result()
         if err != nil || len(data) == 0 {
             continue
         }
-
         version, _ := strconv.ParseInt(data["version"], 10, 64)
-        result[key] = &backingstore.Entry{
+        entry := &backingstore.Entry{
             Key:     key,
             Value:   []byte(data["value"]),
             Version: version,
         }
+        if d, err := c.ttl.Result(); err == nil && d > 0 {
+            entry.ExpiresAt = now.Add(d)
+        }
+        result[key] = entry
     }
 
     return result, nil
 }
 
-func (r *RedisStore) SetMulti(ctx context.Context, entries map[string][]byte) (map[string]int64, error) {
-    result := make(map[string]int64)
+func (r *RedisStore) SetMulti(ctx context.Context, entries map[string]backingstore.SetRequest) (map[string]int64, error) {
+    // Reuse the single-key Lua script per entry inside a pipeline so each
+    // key gets the same atomic version-bump-plus-TTL behavior as Set.
+    result := make(map[string]int64, len(entries))
+    if len(entries) == 0 {
+        return result, nil
+    }
 
-    // Use pipeline for efficiency
+    script := redis.NewScript(`
+        local hashKey = KEYS[1]
+        local value = ARGV[1]
+        local ttlMs = tonumber(ARGV[2])
+
+        local version = redis.call('HGET', hashKey, 'version')
+        if not version then version = 0 end
+        version = tonumber(version) + 1
+
+        redis.call('HSET', hashKey, 'value', value, 'version', version)
+        if ttlMs > 0 then
+            redis.call('PEXPIRE', hashKey, ttlMs)
+        else
+            redis.call('PERSIST', hashKey)
+        end
+        return version
+    `)
+
     pipe := r.client.Pipeline()
+    type pending struct {
+        cmd *redis.Cmd
+    }
+    pendings := make(map[string]pending, len(entries))
 
-    for key, value := range entries {
+    for key, req := range entries {
+        if req.TTL < 0 {
+            return nil, fmt.Errorf("invalid negative ttl for key %q: %v", key, req.TTL)
+        }
         hashKey := fmt.Sprintf("cache:%s", key)
-
-        // Simplified: just increment version
-        pipe.HIncrBy(ctx, hashKey, "version", 1)
-        pipe.HSet(ctx, hashKey, "value", value)
+        ttlMs := int64(req.TTL / time.Millisecond)
+        pendings[key] = pending{cmd: script.Run(ctx, pipe, []string{hashKey}, req.Value, ttlMs)}
     }
 
     if _, err := pipe.Exec(ctx); err != nil {
         return nil, err
     }
 
-    // For simplicity, fetch versions after
-    for key := range entries {
-        hashKey := fmt.Sprintf("cache:%s", key)
-        version, _ := r.client.HGet(ctx, hashKey, "version").Int64()
-        result[key] = version
+    for key, p := range pendings {
+        v, err := p.cmd.Int64()
+        if err != nil {
+            return result, fmt.Errorf("setmulti version for %q: %w", key, err)
+        }
+        result[key] = v
     }
-
     return result, nil
 }
 
@@ -349,26 +460,487 @@ func TestRedisStore_GetSet(t *testing.T) {
 
     ctx := context.Background()
 
-    // Test Set
-    version1, err := store.Set(ctx, "test_key", []byte("test_value"))
+    // Test Set with no TTL
+    version1, err := store.Set(ctx, "test_key", []byte("test_value"), 0)
     require.NoError(t, err)
     require.Greater(t, version1, int64(0))
 
     // Test Get
-    value, version2, err := store.Get(ctx, "test_key")
+    entry, err := store.Get(ctx, "test_key")
     require.NoError(t, err)
-    require.Equal(t, []byte("test_value"), value)
-    require.Equal(t, version1, version2)
+    require.Equal(t, []byte("test_value"), entry.Value)
+    require.Equal(t, version1, entry.Version)
+    require.True(t, entry.ExpiresAt.IsZero(), "no TTL set, ExpiresAt should be zero")
 
     // Test Update increments version
-    version3, err := store.Set(ctx, "test_key", []byte("updated_value"))
+    version2, err := store.Set(ctx, "test_key", []byte("updated_value"), 0)
     require.NoError(t, err)
-    require.Greater(t, version3, version1)
+    require.Greater(t, version2, version1)
+
+    // Test Set with TTL surfaces ExpiresAt
+    _, err = store.Set(ctx, "ttl_key", []byte("v"), 30*time.Second)
+    require.NoError(t, err)
+    ttlEntry, err := store.Get(ctx, "ttl_key")
+    require.NoError(t, err)
+    require.WithinDuration(t, time.Now().Add(30*time.Second), ttlEntry.ExpiresAt, 2*time.Second)
 
     // Cleanup
     store.Delete(ctx, "test_key")
+    store.Delete(ctx, "ttl_key")
+}
+
+func TestRedisStore_TTLExpires(t *testing.T) {
+    if testing.Short() {
+        t.Skip("Skipping Redis integration test")
+    }
+    store, err := New(&backingstore.Config{
+        Address:  "localhost:6379",
+        Database: "0",
+        PoolSize: 10,
+        Timeout:  5 * time.Second,
+    })
+    require.NoError(t, err)
+    defer store.Close()
+
+    ctx := context.Background()
+    _, err = store.Set(ctx, "expiring_key", []byte("v"), 1*time.Second)
+    require.NoError(t, err)
+
+    // Wait past TTL; Redis should report the key as missing.
+    time.Sleep(1500 * time.Millisecond)
+    _, err = store.Get(ctx, "expiring_key")
+    require.ErrorIs(t, err, backingstore.ErrKeyNotFound)
+}
+
+func TestRedisStore_RejectsNegativeTTL(t *testing.T) {
+    if testing.Short() {
+        t.Skip("Skipping Redis integration test")
+    }
+    store, err := New(&backingstore.Config{Address: "localhost:6379", Timeout: 5 * time.Second})
+    require.NoError(t, err)
+    defer store.Close()
+
+    _, err = store.Set(context.Background(), "k", []byte("v"), -1*time.Second)
+    require.Error(t, err)
 }
 ```
+
+### Step 2.5: Memcached Connector (Day 4-5)
+
+**SOLID**: Single Responsibility — Memcached connector handles only Memcached communication. Liskov Substitution — Memcached's `Get`/`Set`/`Delete` must be observationally interchangeable with Redis behind `BackingStore`.
+
+**Why now**: Memcached has no Lua, no hash type, and no server-side version counter. Building it alongside Redis catches any Redis-specific assumptions baked into the `BackingStore` interface before they harden.
+
+#### 2.5.1 Versioning via `cas` + Value Framing
+
+Memcached exposes a per-key `cas` (compare-and-swap) token that changes on every successful write. We use it as the optimistic-concurrency primitive, but the *version* the interface returns is a separate monotonic counter we maintain ourselves by framing the stored bytes:
+
+```
+stored value = [ 8-byte big-endian version ][ raw payload ]
+```
+
+`Set` flow:
+1. `gets <key>` → returns `[version || payload]` and `cas` token, or miss
+2. Compute `newVersion = oldVersion + 1` (or `1` on miss)
+3. `cas <key> <flags> <exp> <len> <cas-token>` with framed `[newVersion || newPayload]`, where `<exp>` encodes the TTL (see below)
+4. On `EXISTS` response (token mismatch → concurrent write), retry from step 1 up to N times
+5. On `NOT_FOUND` (key vanished), fall back to `add`; if `add` says `NOT_STORED`, retry
+
+This gives the same `(value, version)` contract as Redis without requiring server-side scripting.
+
+#### 2.5.1.5 The Memcached TTL Quirk
+
+Memcached's `exptime` field is overloaded:
+
+- `0` → no expiration
+- `1..2592000` (≤ 30 days, in seconds) → **relative** seconds from now
+- `> 2592000` → **absolute** Unix timestamp
+
+If you naively pass `int32(ttl.Seconds())` for a TTL of 40 days, memcached interprets it as a Unix timestamp far in the past and the key expires immediately. The adapter must convert:
+
+```go
+const memcachedRelativeThreshold = 30 * 24 * time.Hour // 2592000 seconds
+
+func encodeExptime(ttl time.Duration, now time.Time) int32 {
+    if ttl <= 0 {
+        return 0 // no expiration
+    }
+    if ttl <= memcachedRelativeThreshold {
+        // Sub-second TTLs round up to 1 second (memcached has no finer granularity).
+        secs := int64(ttl / time.Second)
+        if ttl%time.Second != 0 {
+            secs++
+        }
+        return int32(secs)
+    }
+    return int32(now.Add(ttl).Unix())
+}
+```
+
+Because the relative form uses *seconds*, the adapter also returns `ExpiresAt` rounded to second granularity — finer precision is not available from memcached. Callers needing sub-second TTL should pick Redis instead.
+
+#### 2.5.2 Memcached Implementation
+
+```go
+// internal/backingstore/memcached/memcached.go
+package memcached
+
+import (
+    "context"
+    "encoding/binary"
+    "errors"
+    "fmt"
+    "time"
+
+    "github.com/bradfitz/gomemcache/memcache"
+    "github.com/sanketn26/gossipcache/internal/backingstore"
+)
+
+const (
+    versionPrefixLen = 8
+    maxCASRetries    = 5
+)
+
+// Store implements BackingStore using Memcached.
+type Store struct {
+    client *memcache.Client
+}
+
+// New creates a new Memcached backing store. Address may be a comma-separated
+// list "host1:11211,host2:11211" for client-side sharding across servers.
+func New(cfg *backingstore.Config) (*Store, error) {
+    client := memcache.New(cfg.Address)
+    client.Timeout = cfg.Timeout
+    if cfg.PoolSize > 0 {
+        client.MaxIdleConns = cfg.PoolSize
+    }
+    if err := client.Ping(); err != nil {
+        return nil, fmt.Errorf("memcached ping failed: %w", err)
+    }
+    return &Store{client: client}, nil
+}
+
+func (s *Store) Get(ctx context.Context, key string) (*backingstore.Entry, error) {
+    item, err := s.client.Get(key)
+    if errors.Is(err, memcache.ErrCacheMiss) {
+        return nil, backingstore.ErrKeyNotFound
+    }
+    if err != nil {
+        return nil, fmt.Errorf("memcached get %q: %w", key, err)
+    }
+    version, value, err := unframe(item.Value)
+    if err != nil {
+        return nil, err
+    }
+    // Return a defensive copy — adapter must not hand out client-owned buffers.
+    out := make([]byte, len(value))
+    copy(out, value)
+    return &backingstore.Entry{
+        Key:       key,
+        Value:     out,
+        Version:   version,
+        ExpiresAt: decodeExpiration(item.Expiration, time.Now()),
+    }, nil
+}
+
+func (s *Store) Set(ctx context.Context, key string, value []byte, ttl time.Duration) (int64, error) {
+    if ttl < 0 {
+        return 0, fmt.Errorf("invalid negative ttl: %v", ttl)
+    }
+    exptime := encodeExptime(ttl, time.Now())
+
+    for attempt := 0; attempt < maxCASRetries; attempt++ {
+        item, err := s.client.Get(key)
+        switch {
+        case errors.Is(err, memcache.ErrCacheMiss):
+            // First write — use Add so we fail if a concurrent writer beat us.
+            addErr := s.client.Add(&memcache.Item{
+                Key:        key,
+                Value:      frame(1, value),
+                Expiration: exptime,
+            })
+            if errors.Is(addErr, memcache.ErrNotStored) {
+                continue // racing first-write; retry as CAS path
+            }
+            if addErr != nil {
+                return 0, fmt.Errorf("memcached add %q: %w", key, addErr)
+            }
+            return 1, nil
+        case err != nil:
+            return 0, fmt.Errorf("memcached gets %q: %w", key, err)
+        }
+
+        oldVersion, _, err := unframe(item.Value)
+        if err != nil {
+            return 0, err
+        }
+        newVersion := oldVersion + 1
+        item.Value = frame(newVersion, value)
+        item.Expiration = exptime // refresh or clear expiration on update
+
+        casErr := s.client.CompareAndSwap(item)
+        if errors.Is(casErr, memcache.ErrCASConflict) {
+            continue // concurrent writer won; retry
+        }
+        if errors.Is(casErr, memcache.ErrNotStored) {
+            continue // key evicted between gets and cas; retry
+        }
+        if casErr != nil {
+            return 0, fmt.Errorf("memcached cas %q: %w", key, casErr)
+        }
+        return newVersion, nil
+    }
+    return 0, fmt.Errorf("memcached set %q: cas conflict after %d retries", key, maxCASRetries)
+}
+
+func (s *Store) Delete(ctx context.Context, key string) error {
+    err := s.client.Delete(key)
+    if errors.Is(err, memcache.ErrCacheMiss) {
+        return nil // delete is idempotent
+    }
+    if err != nil {
+        return fmt.Errorf("memcached delete %q: %w", key, err)
+    }
+    return nil
+}
+
+func (s *Store) GetMulti(ctx context.Context, keys []string) (map[string]*backingstore.Entry, error) {
+    items, err := s.client.GetMulti(keys)
+    if err != nil {
+        return nil, fmt.Errorf("memcached getmulti: %w", err)
+    }
+    now := time.Now()
+    out := make(map[string]*backingstore.Entry, len(items))
+    for k, item := range items {
+        version, value, err := unframe(item.Value)
+        if err != nil {
+            return nil, err
+        }
+        copied := make([]byte, len(value))
+        copy(copied, value)
+        out[k] = &backingstore.Entry{
+            Key:       k,
+            Value:     copied,
+            Version:   version,
+            ExpiresAt: decodeExpiration(item.Expiration, now),
+        }
+    }
+    return out, nil
+}
+
+func (s *Store) SetMulti(ctx context.Context, entries map[string]backingstore.SetRequest) (map[string]int64, error) {
+    // Memcached has no atomic multi-set. Do per-key Set so each gets a
+    // correct monotonic version (and per-key TTL) under the same cas semantics
+    // as single-key.
+    out := make(map[string]int64, len(entries))
+    for k, req := range entries {
+        version, err := s.Set(ctx, k, req.Value, req.TTL)
+        if err != nil {
+            return out, fmt.Errorf("setmulti %q: %w", k, err)
+        }
+        out[k] = version
+    }
+    return out, nil
+}
+
+func (s *Store) Ping(ctx context.Context) error {
+    return s.client.Ping()
+}
+
+func (s *Store) Close() error {
+    // gomemcache has no explicit Close; idle conns are GC'd. Keep the method
+    // for interface compliance and future client swaps.
+    return nil
+}
+
+func frame(version int64, payload []byte) []byte {
+    buf := make([]byte, versionPrefixLen+len(payload))
+    binary.BigEndian.PutUint64(buf[:versionPrefixLen], uint64(version))
+    copy(buf[versionPrefixLen:], payload)
+    return buf
+}
+
+func unframe(framed []byte) (int64, []byte, error) {
+    if len(framed) < versionPrefixLen {
+        return 0, nil, fmt.Errorf("memcached value too short: %d bytes", len(framed))
+    }
+    version := int64(binary.BigEndian.Uint64(framed[:versionPrefixLen]))
+    return version, framed[versionPrefixLen:], nil
+}
+
+// memcachedRelativeThreshold is the cutoff (in the protocol) between
+// "exptime is relative seconds" and "exptime is an absolute Unix timestamp".
+const memcachedRelativeThreshold = 30 * 24 * time.Hour // 2_592_000 seconds
+
+// encodeExptime converts a Go duration to memcached's overloaded exptime field.
+// 0 means no expiration. TTLs <= 30 days are encoded as relative seconds;
+// larger TTLs are encoded as an absolute Unix timestamp.
+func encodeExptime(ttl time.Duration, now time.Time) int32 {
+    if ttl <= 0 {
+        return 0
+    }
+    if ttl <= memcachedRelativeThreshold {
+        secs := int64(ttl / time.Second)
+        if ttl%time.Second != 0 {
+            secs++ // round sub-second TTLs up to 1s — memcached has no finer granularity
+        }
+        return int32(secs)
+    }
+    return int32(now.Add(ttl).Unix())
+}
+
+// decodeExpiration converts the exptime stored in a memcached Item back to an
+// absolute time. Memcached does not return remaining TTL on Get, so we
+// reconstruct from the stored exptime (which gomemcache populates on returned
+// Items). 0 means no expiration. Values <= 30 days are interpreted as already
+// being absolute by the time we read them back from the client library.
+func decodeExpiration(exptime int32, now time.Time) time.Time {
+    if exptime == 0 {
+        return time.Time{}
+    }
+    if exptime <= int32(memcachedRelativeThreshold/time.Second) {
+        // Item was stored with relative seconds; we cannot recover the original
+        // store-time from memcached, so this is best-effort. The cache layer
+        // should treat ExpiresAt as a lower bound and rely on memcached itself
+        // for actual eviction.
+        return now.Add(time.Duration(exptime) * time.Second)
+    }
+    return time.Unix(int64(exptime), 0)
+}
+
+// Context plumbing: gomemcache does not accept context.Context. Honor
+// cancellation at call boundaries by checking ctx.Err() before each round-trip.
+// A context-aware client (e.g., rainycape/memcache) can be swapped behind this
+// adapter without changing callers.
+var _ = time.Second
+```
+
+> **Note on context.Context**: `gomemcache` predates Go's `context` package and does not accept `ctx` in its method signatures. The adapter accepts `ctx` to satisfy the interface and should check `ctx.Err()` before each network round-trip (omitted above for brevity). If strict context propagation matters, swap the client for a context-aware fork behind the same adapter — callers are unaffected.
+
+#### 2.5.3 Memcached Tests
+
+Unit tests should cover framing, CAS retry behavior, and not-found semantics using an in-process fake. Integration tests use a real memcached on `localhost:11211`.
+
+```go
+// internal/backingstore/memcached/memcached_test.go
+package memcached
+
+import (
+    "context"
+    "testing"
+    "time"
+
+    "github.com/stretchr/testify/require"
+    "github.com/sanketn26/gossipcache/internal/backingstore"
+)
+
+func TestMemcachedStore_SetIncrementsVersion(t *testing.T) {
+    if testing.Short() {
+        t.Skip("Skipping memcached integration test")
+    }
+    store, err := New(&backingstore.Config{
+        Address:  "localhost:11211",
+        PoolSize: 10,
+        Timeout:  5 * time.Second,
+    })
+    require.NoError(t, err)
+    defer store.Close()
+
+    ctx := context.Background()
+    t.Cleanup(func() { _ = store.Delete(ctx, "test_key") })
+
+    v1, err := store.Set(ctx, "test_key", []byte("v1"), 0)
+    require.NoError(t, err)
+    require.Equal(t, int64(1), v1)
+
+    entry, err := store.Get(ctx, "test_key")
+    require.NoError(t, err)
+    require.Equal(t, []byte("v1"), entry.Value)
+    require.Equal(t, int64(1), entry.Version)
+    require.True(t, entry.ExpiresAt.IsZero())
+
+    v2, err := store.Set(ctx, "test_key", []byte("v2"), 0)
+    require.NoError(t, err)
+    require.Equal(t, int64(2), v2)
+}
+
+func TestMemcachedStore_GetMissingKey(t *testing.T) {
+    if testing.Short() {
+        t.Skip("Skipping memcached integration test")
+    }
+    store, err := New(&backingstore.Config{
+        Address: "localhost:11211",
+        Timeout: 5 * time.Second,
+    })
+    require.NoError(t, err)
+    defer store.Close()
+
+    _, err = store.Get(context.Background(), "definitely_missing_key")
+    require.ErrorIs(t, err, backingstore.ErrKeyNotFound)
+}
+
+func TestMemcachedStore_TTLExpires(t *testing.T) {
+    if testing.Short() {
+        t.Skip("Skipping memcached integration test")
+    }
+    store, err := New(&backingstore.Config{Address: "localhost:11211", Timeout: 5 * time.Second})
+    require.NoError(t, err)
+    defer store.Close()
+
+    ctx := context.Background()
+    _, err = store.Set(ctx, "expiring_key", []byte("v"), 1*time.Second)
+    require.NoError(t, err)
+
+    time.Sleep(2 * time.Second) // memcached TTL granularity is 1s
+    _, err = store.Get(ctx, "expiring_key")
+    require.ErrorIs(t, err, backingstore.ErrKeyNotFound)
+}
+
+func TestEncodeExptime_RelativeAndAbsolute(t *testing.T) {
+    now := time.Unix(1_700_000_000, 0)
+
+    // Zero TTL → no expiration
+    require.Equal(t, int32(0), encodeExptime(0, now))
+
+    // Sub-second rounds up to 1
+    require.Equal(t, int32(1), encodeExptime(500*time.Millisecond, now))
+
+    // <= 30 days → relative seconds
+    require.Equal(t, int32(60), encodeExptime(60*time.Second, now))
+    require.Equal(t, int32(30*24*3600), encodeExptime(30*24*time.Hour, now))
+
+    // > 30 days → absolute unix timestamp
+    got := encodeExptime(31*24*time.Hour, now)
+    require.Equal(t, int32(now.Add(31*24*time.Hour).Unix()), got)
+}
+
+func TestEncodeExptime_RejectsNegative(t *testing.T) {
+    // Negative TTL must be rejected at the Set boundary, not silently
+    // mapped to "no expiration".
+    if testing.Short() {
+        t.Skip("Skipping memcached integration test")
+    }
+    store, err := New(&backingstore.Config{Address: "localhost:11211", Timeout: 5 * time.Second})
+    require.NoError(t, err)
+    defer store.Close()
+
+    _, err = store.Set(context.Background(), "k", []byte("v"), -1*time.Second)
+    require.Error(t, err)
+}
+
+func TestMemcachedStore_CopyOnGet(t *testing.T) {
+    // Storage must not return a slice the caller can mutate to corrupt
+    // internal state — verify Get returns an independent copy.
+    // (Implementation uses an in-process fake; details omitted.)
+}
+```
+
+#### 2.5.4 Operational Notes
+
+- **Eviction**: Memcached is LRU by default and *will* evict keys under memory pressure, regardless of TTL. Cache misses are normal and the gossip+pull mechanism handles them — but operators should size the memcached fleet for working-set capacity, not just hot keys.
+- **No persistence**: Memcached is in-memory only. After a full memcached restart, all versions and TTLs reset. The cluster will detect this as a mass invalidation through anti-entropy; callers should treat memcached-backed mode as accepting cold-start refetches.
+- **Sharding**: `gomemcache` does consistent-hashing client-side across the address list. All GossipCache nodes must be configured with the same server list in the same order.
+- **TTL precision**: Memcached's TTL granularity is **one second**. Sub-second TTLs round up to 1s. `ExpiresAt` returned from `Get` is best-effort — memcached itself is the authoritative source of expiration, and the cache layer should not rely on `ExpiresAt` for precise eviction timing. If sub-second TTLs are required, use Redis.
 
 ### Step 3: Gossip Message Types (Day 5-6)
 
@@ -1704,7 +2276,9 @@ func TestBackedMode_MultiNode(t *testing.T) {
 
 ## Deliverables
 
-- [ ] Backing store interface and Redis implementation
+- [ ] Backing store interface with TTL semantics and `ExpiresAt`-aware reads
+- [ ] Redis implementation with atomic version+TTL via Lua (covers Valkey)
+- [ ] Memcached implementation with `cas`-based versioning and exptime quirk handling
 - [ ] Gossip protocol with metadata propagation
 - [ ] Network layer (TCP/UDP)
 - [ ] Peer management and discovery
@@ -1717,9 +2291,13 @@ func TestBackedMode_MultiNode(t *testing.T) {
 
 | Slice | Write This Test First | Expected Behavior | Checkpoint |
 | --- | --- | --- | --- |
-| Backing store contract | `internal/backingstore/backingstore_test.go` | Store interface supports get/set/delete/multi-key/version semantics through a fake | `go test ./internal/backingstore` |
+| Backing store contract | `internal/backingstore/backingstore_test.go` | Store interface supports get/set/delete/multi-key/version/TTL semantics through a fake | `go test ./internal/backingstore` |
 | Redis connector | `internal/backingstore/redis/redis_test.go` | Set increments version atomically, Get returns value/version, missing maps to not found | `go test ./internal/backingstore/redis` |
 | Redis integration | `internal/backingstore/redis/redis_integration_test.go` | Real Redis round-trips values and survives reconnects | `go test -tags=integration ./internal/backingstore/redis` |
+| Redis TTL | `internal/backingstore/redis/redis_ttl_test.go` | Set with TTL surfaces `ExpiresAt`, key expires in Redis after TTL, Set with `ttl=0` clears any existing TTL, negative TTL is rejected | `go test -tags=integration ./internal/backingstore/redis` |
+| Memcached connector | `internal/backingstore/memcached/memcached_test.go` | Framed version round-trips via Get, Set produces monotonic versions, CAS conflict triggers retry, missing key returns `ErrKeyNotFound` | `go test ./internal/backingstore/memcached` |
+| Memcached integration | `internal/backingstore/memcached/memcached_integration_test.go` | Real memcached round-trips values, concurrent writers see monotonic versions, delete is idempotent | `go test -tags=integration ./internal/backingstore/memcached` |
+| Memcached TTL | `internal/backingstore/memcached/memcached_ttl_test.go` | `encodeExptime` produces relative seconds for TTL ≤ 30 days and absolute timestamp above, sub-second TTL rounds up to 1s, key expires after TTL, negative TTL is rejected | `go test -tags=integration ./internal/backingstore/memcached` |
 | Gossip messages | `internal/gossip/message_test.go` | Each message reports the correct type and validates required fields | `go test ./internal/gossip` |
 | Codec | `internal/network/codec_test.go` | Encode/decode round-trips messages and rejects bad magic, version, and truncated frames | `go test ./internal/network` |
 | Transport | `internal/network/transport_test.go` | Peer send/receive uses context cancellation and returns useful errors | `go test -race ./internal/network` |

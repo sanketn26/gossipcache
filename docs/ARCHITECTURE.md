@@ -258,7 +258,6 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment guides.
 
 ## References
 
+- [Implementation Status](STATUS.md)
 - [Technical Specification](TECHNICAL_SPEC.md)
-- [Gossip Protocol Details](GOSSIP_PROTOCOL.md)
 - [Deployment Guide](DEPLOYMENT.md)
-- [API Documentation](API.md)

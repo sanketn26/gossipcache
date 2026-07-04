@@ -3,6 +3,12 @@
 **Date**: 2025-01-30
 **Status**: Review Complete - Gap Fixes Applied
 
+> ⚠️ **Read this first**: every ✅ in this document means "the implementation
+> *plan* covers this", **not** "this is implemented". This file compares
+> design docs against phase plans only. For what actually exists in code, see
+> [docs/STATUS.md](../STATUS.md) — that file is the single source of truth for
+> implementation status.
+
 ## Executive Summary
 
 Comprehensive review of architecture, technical spec, and sequence diagrams against the implementation plan. The high-priority gaps identified in the original pass have now been folded into the phase docs, and optional security work is captured as Phase 4.5.
