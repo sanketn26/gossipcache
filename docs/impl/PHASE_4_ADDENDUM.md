@@ -3,6 +3,10 @@
 **Based on**: Gap Analysis findings
 **Adds to**: PHASE_4_PRODUCTION.md
 
+> ⚠️ **Design reference (2025-01-30).** MySQL and DNS discovery are out of v1
+> scope per [../STATUS.md](../STATUS.md). See the banner in
+> [PHASE_4_PRODUCTION.md](PHASE_4_PRODUCTION.md).
+
 This addendum covers high-priority features identified in the gap analysis that should be added to Phase 4.
 
 ## Additional Steps

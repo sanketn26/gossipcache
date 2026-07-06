@@ -6,6 +6,9 @@
 
 **Status**: Complete
 
+> ℹ️ Phase 1 is implemented; see [../STATUS.md](../STATUS.md) for what shipped.
+> This document is kept as design reference.
+
 ## Overview
 
 Phase 1 establishes the architectural foundation for GossipCache. We'll create core abstractions, implement a local cache storage engine, and set up the project infrastructure. By the end of this phase, you'll have a working single-node cache with excellent test coverage.

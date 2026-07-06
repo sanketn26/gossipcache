@@ -1,5 +1,15 @@
 # GossipCache Implementation Plan
 
+> ⚠️ **Design reference, partially superseded (2026-07-06).** The phase plans
+> in this directory date from 2025-01-30 and describe the full target system.
+> The **v1 scope contract lives in [../STATUS.md](../STATUS.md)** (backed mode
+> only, Redis/Valkey only, static peers, two-node demo), the gossip transport
+> is `hashicorp/memberlist` per [ADR-0001](../adr/0001-gossip-transport.md)
+> (accepted), and backed-mode invalidation is evict-on-notify per
+> [ADR-0002](../adr/0002-evict-on-notify.md). Where any document here
+> disagrees with STATUS.md or the ADRs, they win. Each phase doc carries a
+> banner with the specifics.
+
 This directory contains detailed, phased implementation plans for building GossipCache based on the architecture and technical specifications.
 
 ## Implementation Principles
@@ -168,6 +178,25 @@ Month 1          Month 2          Month 3          Month 4          Month 5
 ✨ Updated with gap analysis findings: +connection pooling, +MySQL, +DNS, +debug/pprof
 Phase 5 adds demo polish, repository readiness, and Buy Me a Coffee setup
 ```
+
+## Updates (2026-07-06)
+
+### ADRs Accepted — Plans Partially Superseded
+
+- **[ADR-0001](../adr/0001-gossip-transport.md) accepted**: v1 uses
+  `hashicorp/memberlist` for membership, failure detection, and gossip
+  transport. Phase 2 Steps 4 and 4.5 (network layer, connection pooling,
+  backpressure) and the peer-management half of Step 5 will not be built —
+  including the additions celebrated in the 2025-01-30 update below.
+- **[ADR-0002](../adr/0002-evict-on-notify.md) accepted**: backed-mode
+  invalidation is evict-on-notify. Notifications carry key + version only
+  (no checksum); receiving nodes evict instead of pulling; deletes broadcast
+  the same invalidation (no tombstones in backed mode). This resolves the
+  thundering-herd/interest-tracking and delete-propagation design questions.
+- **v1 scope** is pinned in [../STATUS.md](../STATUS.md): backed mode only,
+  Redis/Valkey only, static peers, two-node demo with measured numbers.
+  Memcached (Phase 2 Step 2.5), independent mode (Phase 3), and the Phase 4
+  stores/discovery work are v2+.
 
 ## Recent Updates (2025-01-30)
 
@@ -364,5 +393,5 @@ Document architectural decisions as you implement:
 
 ---
 
-**Last Updated**: 2025-01-30
-**Current Phase**: Phase 1 - Foundation
+**Last Updated**: 2026-07-06
+**Current Phase**: Phase 2 (v1 subset) — backed-mode integration; see [../STATUS.md](../STATUS.md)

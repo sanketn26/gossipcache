@@ -8,6 +8,12 @@
 
 **Status**: Not Started
 
+> ⚠️ **Scope note.** This phase remains the target for the public release, but
+> the v1 contract in [../STATUS.md](../STATUS.md) calls for a **two-node**
+> backed-mode demo with three measured numbers (local hit latency,
+> invalidation propagation time, bandwidth per write) — not the 3-node/Phase-4
+> prerequisite described below. Backed mode + Redis only for v1.
+
 ## Overview
 
 Phase 5 is the "show the work well" phase. The aim is not to add more core distributed systems behavior; it is to package the existing behavior into a crisp repository experience with a strong demo, useful docs, trustworthy examples, and a simple Buy Me a Coffee sponsorship path.

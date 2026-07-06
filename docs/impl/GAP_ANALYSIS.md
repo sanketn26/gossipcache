@@ -8,6 +8,16 @@
 > design docs against phase plans only. For what actually exists in code, see
 > [docs/STATUS.md](../STATUS.md) — that file is the single source of truth for
 > implementation status.
+>
+> **Also superseded**: this analysis predates
+> [ADR-0001](../adr/0001-gossip-transport.md) (memberlist replaces the custom
+> network layer it scores — TCP/UDP transport, wire protocol, connection
+> pooling, backpressure) and [ADR-0002](../adr/0002-evict-on-notify.md)
+> (evict-on-notify replaces the pull-on-notify gossip semantics). It also
+> missed the two design gaps that mattered most for backed mode — delete
+> propagation and interest/held-set semantics — both now resolved by
+> ADR-0002. Its coverage scores describe the January 2025 plan, not v1.
+> Kept for historical reference.
 
 ## Executive Summary
 

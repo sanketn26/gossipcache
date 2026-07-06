@@ -6,7 +6,13 @@
 
 **Prerequisites**: Phases 1-3 complete
 
-**Status**: Not Started
+**Status**: Not Started — out of v1 scope
+
+> ⚠️ **Design reference (2025-01-30).** Postgres/MySQL backing stores and
+> EC2/Docker/K8s/DNS discovery are out of v1 scope per
+> [../STATUS.md](../STATUS.md). With
+> [ADR-0001](../adr/0001-gossip-transport.md) accepted, discovery mechanisms
+> reduce to producing a seed list for `memberlist.Join`.
 
 ## Overview
 

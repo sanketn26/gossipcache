@@ -5,7 +5,7 @@ This is the single source of truth for what is actually built. Design docs
 target system; a feature is only real if it appears in the **Implemented**
 section below.
 
-_Last updated: 2026-07-05_
+_Last updated: 2026-07-06_
 
 ## v1 Scope Contract
 
@@ -19,7 +19,8 @@ truth.
 - Backed mode only
 - Redis/Valkey as the only backing store
 - Static peer discovery only
-- Metadata-only gossip (key, version, checksum) + pull-on-mismatch
+- Invalidation-only gossip (key, version) with evict-on-notify semantics
+  ([ADR-0002](adr/0002-evict-on-notify.md)); pulls happen only on demand
 - Singleflight on backing-store pulls
 - A two-node demo with measured numbers: local hit latency, invalidation
   propagation time, bandwidth per write
@@ -57,16 +58,24 @@ started):
 
 ## Not Started
 
-- Gossip engine, network transport, membership (see
-  [ADR-0001](adr/0001-gossip-transport.md) — decide memberlist vs custom
-  before writing any of this)
-- Anti-entropy
-- Delete tombstones (currently a backing-store delete is indistinguishable
-  from "never existed"; must be resolved with the gossip design)
-- Interest/held-set semantics: which nodes react to invalidation gossip for
-  keys they do not hold (unresolved design question; naive
-  pull-on-every-change re-creates the thundering herd at the backing store)
-- Benchmarks validating the README performance claims
+- Gossip engine and membership: build as a `hashicorp/memberlist` delegate
+  per accepted [ADR-0001](adr/0001-gossip-transport.md); invalidation
+  semantics are evict-on-notify per [ADR-0002](adr/0002-evict-on-notify.md).
+  No custom transport, wire protocol, connection pool, or peer manager.
+- Anti-entropy (evict-based reconciliation per ADR-0002)
+- Benchmarks validating the README performance claims (v1 contract numbers:
+  local hit latency, invalidation propagation time, bandwidth per write)
+
+## Resolved Design Questions
+
+- **Delete tombstones**: resolved by [ADR-0002](adr/0002-evict-on-notify.md).
+  A delete broadcasts the same invalidation as a write; the backing store is
+  the source of truth, so `ErrKeyNotFound` on re-pull is an ordinary miss and
+  backed mode needs no tombstones.
+- **Interest/held-set semantics**: resolved by
+  [ADR-0002](adr/0002-evict-on-notify.md). Nodes evict on notification instead
+  of pulling, so nodes that do not hold a key do nothing and the
+  thundering-herd problem never arises.
 
 ## Known Debt
 

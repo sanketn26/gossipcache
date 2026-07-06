@@ -6,7 +6,13 @@
 
 **Prerequisites**: Phase 2 complete
 
-**Status**: Not Started
+**Status**: Not Started — out of v1 scope
+
+> ⚠️ **Design reference (2025-01-30).** Independent mode is explicitly out of
+> scope for v1 per [../STATUS.md](../STATUS.md) (tracked as v2+, not partially
+> started). Before implementing, revisit this plan against
+> [ADR-0001](../adr/0001-gossip-transport.md) — full-data gossip may need
+> memberlist's reliable TCP sends or a side channel.
 
 ## Overview
 

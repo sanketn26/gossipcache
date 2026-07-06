@@ -1,5 +1,12 @@
 # Testing Strategy for GossipCache
 
+> ⚠️ **Design reference (2025-01-30), partially superseded.** Test plans for
+> the custom codec, transport, connection pool, and backpressure queue are
+> obsolete under [ADR-0001](../adr/0001-gossip-transport.md) (memberlist owns
+> the transport). Gossip-behavior tests should target the evict-on-notify
+> semantics of [ADR-0002](../adr/0002-evict-on-notify.md). v1 test scope
+> follows [../STATUS.md](../STATUS.md).
+
 Comprehensive testing approach covering unit tests, integration tests, performance tests, and chaos engineering.
 
 ## Overview

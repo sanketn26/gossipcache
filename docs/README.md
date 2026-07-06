@@ -7,7 +7,9 @@ Welcome to the GossipCache documentation. This directory contains comprehensive 
 ### Core Documentation
 
 - **[STATUS.md](STATUS.md)** - **Single source of truth** for implementation status and the v1 scope contract; design docs describe the target, this describes reality
-- **[adr/](adr/)** - Architecture decision records (ADR-0001: gossip transport build-vs-buy)
+- **[adr/](adr/)** - Architecture decision records — both accepted and binding for v1:
+  - [ADR-0001](adr/0001-gossip-transport.md): gossip transport is `hashicorp/memberlist` (no custom network layer)
+  - [ADR-0002](adr/0002-evict-on-notify.md): backed-mode invalidation is evict-on-notify (no checksums, no tombstones, demand-driven pulls)
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - High-level system architecture, design decisions, and component overview
 - **[TECHNICAL_SPEC.md](TECHNICAL_SPEC.md)** - Detailed technical specifications including data structures, protocols, APIs, and interfaces
 - **[DEPLOYMENT.md](DEPLOYMENT.md)** - Deployment guides for EC2, Docker, and Kubernetes environments
@@ -107,9 +109,9 @@ GossipCache provides microsecond-level local cache access while maintaining even
 ### Operating Modes
 
 **Backed Mode:**
-- Metadata-only gossip (minimal bandwidth)
-- Pull data from backing store on change detection
-- Redis/Valkey/Postgres/MySQL support
+- Invalidation-only gossip: key + version, evict on notify ([ADR-0002](adr/0002-evict-on-notify.md))
+- Pulls happen only on demand, singleflighted, on the next local read
+- Redis/Valkey in v1; Postgres/MySQL planned ([STATUS.md](STATUS.md))
 - Backing store is source of truth
 
 **Independent Mode:**
@@ -169,5 +171,5 @@ Found an issue with the documentation? Have a suggestion?
 
 ---
 
-**Last Updated**: 2025-01-30
+**Last Updated**: 2026-07-06
 **Version**: 0.1.0

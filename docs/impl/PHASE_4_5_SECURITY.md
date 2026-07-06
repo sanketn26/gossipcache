@@ -6,7 +6,13 @@
 
 **Prerequisites**: Phase 4 complete
 
-**Status**: Optional / Future
+**Status**: Optional / Future — out of v1 scope
+
+> ⚠️ **Design reference (2025-01-30).** Out of v1 scope per
+> [../STATUS.md](../STATUS.md). Note that with
+> [ADR-0001](../adr/0001-gossip-transport.md) accepted, memberlist's built-in
+> shared-key encryption covers gossip-transport encryption; Step 1 (custom TLS
+> for a custom transport) is superseded, shrinking this phase's surface.
 
 ## Overview
 

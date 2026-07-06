@@ -1,5 +1,14 @@
 # GossipCache Implementation Guide
 
+> ⚠️ **Design reference (2025-01-30), partially superseded.** The v1 scope is
+> defined in [../STATUS.md](../STATUS.md). Step 6 (gossip codec), Step 7
+> (network transport and backpressure), and the peer-management parts of later
+> steps are superseded by [ADR-0001](../adr/0001-gossip-transport.md)
+> (memberlist). Step 8's backed-mode gossip semantics are superseded by
+> [ADR-0002](../adr/0002-evict-on-notify.md) (evict-on-notify, no checksum,
+> delete = invalidation). Steps 9–13 (vector clocks, conflict resolvers,
+> independent mode, discovery) are v2+.
+
 This guide is the hands-on path through the implementation. Use it beside the phase docs when you want to sit down, write code, run tests, and make the next small design decision.
 
 The goal is not to copy every snippet exactly. The goal is to implement each layer in a way that keeps the public API stable, isolates complexity, and gives you a working checkpoint after every few files.

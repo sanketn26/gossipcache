@@ -1,5 +1,13 @@
 # Go Package Structure
 
+> ⚠️ **Design reference (2025-01-30), partially superseded.**
+> `internal/network` (custom transport/codec/pool) is not built in v1 —
+> memberlist owns the transport per
+> [ADR-0001](../adr/0001-gossip-transport.md). `internal/vclock`,
+> `internal/conflict`, and `internal/discovery` are v2+ per
+> [../STATUS.md](../STATUS.md). The layout that exists today is authoritative
+> in the repo itself.
+
 Complete package organization for GossipCache following Go best practices and SOLID principles.
 
 ## Directory Layout

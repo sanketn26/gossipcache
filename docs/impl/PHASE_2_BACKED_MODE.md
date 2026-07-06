@@ -6,7 +6,31 @@
 
 **Prerequisites**: Phase 1 complete
 
-**Status**: Not Started
+**Status**: In progress — v1 subset only (see banner below)
+
+> ⚠️ **Design reference (2025-01-30), partially superseded.** The v1 scope is
+> defined in [../STATUS.md](../STATUS.md); where this document disagrees with
+> STATUS.md or the ADRs, they win. Specifically:
+>
+> - **Steps 4 (Network Layer), 4.5 (Connection Pooling & Backpressure), and
+>   the peer-management half of Step 5** are superseded by
+>   [ADR-0001](../adr/0001-gossip-transport.md): v1 uses
+>   `hashicorp/memberlist` for transport, membership, and failure detection.
+>   No custom wire protocol, codec, connection pool, or peer manager will be
+>   built.
+> - **The pull-on-notify gossip semantics in Steps 3, 5, and 6** (the
+>   `Checksum` message field, `needsPull`, gossip-triggered
+>   `pullFromBackingStore`) are superseded by
+>   [ADR-0002](../adr/0002-evict-on-notify.md): invalidations carry
+>   `key + version + node ID` only, and receiving nodes evict rather than
+>   pull. Delete broadcasts the same invalidation; backed mode needs no
+>   tombstones.
+> - **Step 2.5 (Memcached connector)** is out of v1 scope per STATUS.md.
+> - The TDD table rows for codec, transport, connection pool, and
+>   backpressure are obsolete with ADR-0001.
+>
+> Code snippets throughout are illustrations, not specs — several predate the
+> final `BackingStore` interface (`internal/backingstore/backingstore.go`).
 
 ## Overview
 

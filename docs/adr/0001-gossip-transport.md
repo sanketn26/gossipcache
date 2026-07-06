@@ -1,6 +1,6 @@
 # ADR-0001: Gossip Transport — hashicorp/memberlist vs Custom
 
-**Status**: Proposed
+**Status**: Accepted (2026-07-06)
 **Date**: 2026-07-05
 
 ## Context
