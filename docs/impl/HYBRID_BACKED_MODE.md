@@ -586,11 +586,11 @@ Observability is part of correctness: a node must expose whether it is safe to s
 
 | Layer | Owns |
 |---|---|
-| **H1–H3** | No-op meter/tracer interfaces; emit hooks on state transitions, RPC, and stream events |
-| **H4** | Minimum production safety signals: readiness reason codes, reconciliation flag, gap/replay counters, L2 durability errors; K8s probe wiring |
-| **Phase 5** | Full metric catalog validation, dashboards, SLO burn-rate alerts, runbooks, cardinality CI, overhead budgets, fault-to-signal matrix |
+| **P0–P3 / H1–H3** | No-op meter/tracer interfaces; emit hooks on state transitions, RPC, and stream events |
+| **P4 / H4** | Minimum production safety signals: readiness reason codes, reconciliation flag, gap/replay counters, L2 durability errors; K8s probe wiring |
+| **P5** | Full metric catalog validation, dashboards, SLO burn-rate alerts, runbooks, cardinality CI, overhead budgets, fault-to-signal matrix |
 
-H4 must not claim dashboards/SLO burn-rate delivery as done; Phase 5 owns that exit gate.
+P4/H4 must not claim dashboards/SLO burn-rate delivery as done; **P5** owns that exit gate. See [PHASE_PLAN.md](PHASE_PLAN.md).
 
 ### 9.2 Metrics
 
@@ -637,21 +637,21 @@ Optional fanout peer loss alone does not fail readiness. **Missing origin checkp
 
 **Primary production profile: Kubernetes.** Startup/liveness/readiness probes and graceful drain are required for the first release.
 
-**Optional profile: MicroVM.** Guest boot, clock, volume, incarnation ID, vsock status mirroring, and snapshot restore rules are specified in [Phase 5](PHASE_5_OBSERVABILITY.md#optional-microvm-readiness-profile) and are not a Phase 5 exit gate for the first release.
+**Optional profile: MicroVM.** Guest boot, clock, volume, incarnation ID, vsock status mirroring, and snapshot restore rules are specified in [P5 Observability](PHASE_05_OBSERVABILITY.md#optional-microvm-readiness-profile) and are not a P5 exit gate for the first release.
 
 ### 9.6 Dashboards, SLOs, and alerts
 
-Four baseline dashboards (Phase 5): L1 effectiveness, invalidation/replay, L2 RPC/storage, durability/capacity.
+Four baseline dashboards (P5): L1 effectiveness, invalidation/replay, L2 RPC/storage, durability/capacity.
 
 Page on version regression, fencing failure, corruption, acknowledged-write loss, unready replicas below quorum, unreconciled gap past staleness budget. Warn on replay lag, queue pressure, reconnect storms, mismatch rate, L2 tail latency, compaction backlog, disk forecast.
 
 ### 9.7 Acceptance tests
 
-See Phase 5. Telemetry failure must never block L1 reads, invalidation application, or L2 commits.
+See P5. Telemetry failure must never block L1 reads, invalidation application, or L2 commits.
 
 ## 10. Implementation Sequence
 
-### Milestone H1: Contracts and state machine
+### Milestone H1 / P1: Contracts and state machine
 
 - Finalize envelope and protobuf schemas, compatibility policy, golden fixtures.
 - Implement L1 state machine, immutable publication, TTL, singleflight, tombstones, stale-serve policies, epoch rules, race tests.
@@ -659,7 +659,7 @@ See Phase 5. Telemetry failure must never block L1 reads, invalidation applicati
 
 **Exit gate**: Every transition covered; stale fetch cannot become `VALID`; benchmarks name hardware and load profile.
 
-### Milestone H2: Reliable control plane
+### Milestone H2 / P2: Reliable control plane
 
 - Framed mTLS TCP, fanout, batching, hop acks vs application `StreamAcknowledgement`, durable origin replay log, gap detection, coalescing, backpressure.
 - `StreamCheckpoint` heartbeats, subscription leases, freshness timeout → `STREAM_FRESHNESS_UNKNOWN`.
@@ -668,7 +668,7 @@ See Phase 5. Telemetry failure must never block L1 reads, invalidation applicati
 
 **Exit gate**: No silent loss inside replay window; application acks never advance on RAM-only buffers; expired gaps force reconciliation; silent stall fails readiness with `STREAM_FRESHNESS_UNKNOWN`.
 
-### Milestone H3: Authoritative L2 baseline
+### Milestone H3 / P3: Authoritative L2 baseline
 
 - Shard ownership, Get/Set/Delete/CAS, durable journal, RAM index, disk segments, recovery, compaction, changefeed.
 - Mutation and changefeed cursor durable atomically.
@@ -676,7 +676,7 @@ See Phase 5. Telemetry failure must never block L1 reads, invalidation applicati
 
 **Exit gate**: Crash/restart and failover never regress versions or ack a lost write.
 
-### Milestone H4: Anti-entropy, minimum observability, Kubernetes ops
+### Milestone H4 / P4: Anti-entropy, minimum observability, Kubernetes ops
 
 - Held-key summaries, immediate reconciliation on gaps, periodic sweeps.
 - Kubernetes discovery, PDBs, topology spread, rolling-upgrade compatibility.
@@ -684,16 +684,24 @@ See Phase 5. Telemetry failure must never block L1 reads, invalidation applicati
 
 **Exit gate**: Chaos covers pod churn, partitions, slow peers, L2 failover, offline beyond replay retention; readiness never lies about unreconciled gaps.
 
-### Milestone H5: Hardware optimization
+### P5 — Observability suite (after P4 / H4 interfaces stable)
 
-- Only after baseline profiling: thread-per-core, io_uring, direct I/O, adaptive hot tier, etc.
+End-to-end observability delivery: dashboards, SLO alerts, cardinality CI, overhead budgets, fault-to-signal matrix. See [PHASE_05_OBSERVABILITY.md](PHASE_05_OBSERVABILITY.md).
+
+### P6 — Security hardening
+
+mTLS on L2 RPC and streams, mgmt protection, rate limits, rotation. See [PHASE_06_SECURITY.md](PHASE_06_SECURITY.md).
+
+### P7 — Demo and polish
+
+Local hub+L1 demo, README, sponsorship. See [PHASE_07_DEMO_POLISH.md](PHASE_07_DEMO_POLISH.md).
+
+### Milestone H5 / P8: Hardware optimization
+
+- Only after baseline profiling (P5): thread-per-core, io_uring, direct I/O, adaptive hot tier, etc.
 - Portable engine remains the reference.
 
 **Exit gate**: Each optimization has benchmark, metric, rollback switch, no correctness regression.
-
-### Phase 5 (after H4 interfaces stable)
-
-End-to-end observability delivery: dashboards, SLO alerts, cardinality CI, overhead budgets, fault-to-signal matrix. See [PHASE_5_OBSERVABILITY.md](PHASE_5_OBSERVABILITY.md).
 
 ## 11. Required Test Matrix
 
@@ -712,7 +720,7 @@ End-to-end observability delivery: dashboards, SLO alerts, cardinality CI, overh
 - Tombstone retention; no deleted-key resurrection.
 - Adjacent protocol version rolling upgrade.
 - Telemetry collector outage and export backpressure.
-- Cardinality, readiness-reason, fault-to-alert coverage (Phase 5).
+- Cardinality, readiness-reason, fault-to-alert coverage (P5).
 
 ## 12. Explicit Non-Goals for the First Release
 
@@ -756,8 +764,11 @@ Gates are measured, not aspirational. Until baseline runs exist, numeric SLOs st
 | Document | Role |
 |---|---|
 | [../SEMANTICS.md](../SEMANTICS.md) | **Wins on conflict** — locked product semantics |
-| This file | Implementation detail, wire, milestones H1–H5 |
-| [PHASE_5_OBSERVABILITY.md](PHASE_5_OBSERVABILITY.md) | Observability delivery phase |
+| This file | Implementation detail, wire, milestones H1–H5 (= P1–P4 + P8) |
+| [PHASE_PLAN.md](PHASE_PLAN.md) | Code-level phases P0–P8 + FD checklist |
+| [PHASE_05_OBSERVABILITY.md](PHASE_05_OBSERVABILITY.md) | P5 observability |
+| [PHASE_06_SECURITY.md](PHASE_06_SECURITY.md) | P6 security |
+| [PHASE_07_DEMO_POLISH.md](PHASE_07_DEMO_POLISH.md) | P7 demo / polish |
 | [../ARCHITECTURE.md](../ARCHITECTURE.md) | Short overview |
 | [../TECHNICAL_SPEC.md](../TECHNICAL_SPEC.md) | API/types sketch |
 | [../diagrams/SEQUENCES.md](../diagrams/SEQUENCES.md) | Flows |

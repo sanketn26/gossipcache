@@ -98,7 +98,7 @@ Do not gate on sub-µs marketing claims without published hardware numbers.
 - Readiness reason codes under fault matrix
 - Telemetry export failure does not block Get/Set/apply
 
-Align with [PHASE_5_OBSERVABILITY.md](PHASE_5_OBSERVABILITY.md).
+Align with [PHASE_05_OBSERVABILITY.md](PHASE_05_OBSERVABILITY.md) (P5).
 
 ## 6. What not to prioritize (v1)
 
@@ -122,7 +122,11 @@ go test -bench=. ./...
 
 | Gate | Pass when |
 |------|-----------|
-| H1 | All SM transitions + race unit tests green |
-| H2 | Disconnect/replay/freshness/W tests green |
-| H3 | Hub crash/restart: no lost acknowledged write |
-| H4+ | Ready never true with unreconciled gap or stale checkpoint |
+| P1 / H1 | All SM transitions + race unit tests green |
+| P2 / H2 | Disconnect/replay/freshness/W tests green |
+| P3 / H3 | Hub crash/restart: no lost acknowledged write |
+| P4 / H4 | Ready never true with unreconciled gap or stale checkpoint |
+| P5 | Fault-to-signal + cardinality CI |
+| P6 | Rogue client rejected under mTLS |
+| P7 | Demo scenarios fail closed on non-convergence |
+| P8 / H5 | Optim benches + correctness suite still green |

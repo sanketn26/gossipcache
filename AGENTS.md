@@ -12,25 +12,28 @@ The module path is:
 github.com/sanketn26/gossipcache
 ```
 
-The project supports two intended operating modes:
+**v1 product (locked):** hybrid in-process **L1** + native authoritative **L2 hub**
+([docs/SEMANTICS.md](docs/SEMANTICS.md)). Redis/Postgres-as-SoT and independent
+full-value gossip are out of scope for v1.
 
-- Backed mode: Redis, Valkey, Postgres, or another backing store is the source of truth. Gossip should primarily propagate metadata and invalidation signals; nodes pull values from the backing store when needed.
-- Independent mode: no backing store. Gossip carries data and conflict metadata between nodes, with eventual consistency across peers.
+**Code today:** local in-memory L1 only. See [docs/STATUS.md](docs/STATUS.md).
+Build order: [docs/impl/PHASE_PLAN.md](docs/impl/PHASE_PLAN.md) (P0–P8).
 
 ## Repository Map
 
-- `cmd/gossipcache/`: application entry point.
 - `pkg/gossipcache/`: public client-facing API. Keep exported API changes deliberate and documented.
-- `internal/cache/`: cache coordination layer built on storage abstractions.
+- `pkg/gossipcache/inmemory/`: public constructor for local memory cache.
+- `internal/cache/`: local L1 coordination over storage (pre–state-machine).
 - `internal/storage/`: storage interfaces and errors.
 - `internal/storage/memory/`: in-memory storage, sharding, TTL expiration, and eviction policies.
-- `internal/config/`: configuration structs, loading, and validation.
+- `internal/config/`: configuration (L1 + L2 hub placeholders), loading, validation.
 - `internal/observability/`: logging and Prometheus metrics support.
+- `examples/server/`: local L1 example (`-tags example`).
 - `test/benchmark/`: benchmark tests.
 - `docs/`: architecture, deployment, diagrams, and implementation planning.
-- `CLAUDE.md`: older agent guidance with useful architecture notes.
 
-Some packages described in `docs/impl/PACKAGE_STRUCTURE.md` are planned but not yet implemented. Treat docs as design intent, but verify against the current tree before editing.
+Target packages (`internal/l1`, `internal/l2`, `internal/control`, `cmd/l2`, …)
+are planned in PHASE_PLAN but not implemented yet. Verify the tree before editing.
 
 ## Development Commands
 
@@ -140,10 +143,9 @@ Use `go mod tidy` only when dependency changes require it.
 
 ## Architecture Invariants
 
-- Local cache access should remain the fast path.
-- Backed mode should treat the backing store as source of truth.
-- Independent mode should not depend on external storage for correctness.
-- Gossip behavior should preserve eventual consistency and tolerate missed updates through anti-entropy.
+- Local L1 cache access should remain the fast path.
+- In hybrid v1, the L2 hub is the version authority; control plane carries invalidations only.
+- Do not reintroduce Redis-as-SoT or UDP gossip control plane for v1.
 - TTL and eviction behavior should be bounded, testable, and deterministic where practical.
 - Shutdown paths should be idempotent and should stop goroutines cleanly.
 

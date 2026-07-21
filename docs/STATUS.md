@@ -1,85 +1,63 @@
 # Implementation Status
 
-This is the single source of truth for what is actually built. Design docs
-(ARCHITECTURE.md, TECHNICAL_SPEC.md, the `impl/` phase plans) describe the
-target system; a feature is only real if it appears in the **Implemented**
-section below.
+Single source of truth for **what is built**. Design docs describe the target;
+a feature is only real if it appears under **Implemented**.
 
-_Last updated: 2026-07-06_
+_Last updated: 2026-07-21_
 
-## v1 Scope Contract
+## Target (v1)
 
-v1 is deliberately narrow. The differentiated idea worth proving first is
-**backed mode**: local in-memory reads at microsecond latency, with gossip as
-a cheap metadata/invalidation channel and the backing store as source of
-truth.
+Authoritative product rules: **[SEMANTICS.md](SEMANTICS.md)** — hybrid **L1 +
+native L2 hub**. Code-level phases: **[impl/PHASE_PLAN.md](impl/PHASE_PLAN.md)**
+(P0–P8).
 
-**In scope for v1:**
+| In scope | Out of scope for v1 |
+|----------|---------------------|
+| Embedded L1, native L2 hub as SoT | Redis/Postgres as version authority |
+| mTLS TCP invalidation streams from hub | UDP gossip / memberlist control plane |
+| VersionTag `(partition_id, sequence)` + `hub_generation` | Independent full-value gossip mode |
+| Tunable W (default 0), stale-serve, consistency readiness | Custom RUDP |
 
-- Backed mode only
-- Redis/Valkey as the only backing store
-- Static peer discovery only
-- Invalidation-only gossip (key, version) with evict-on-notify semantics
-  ([ADR-0002](adr/0002-evict-on-notify.md)); pulls happen only on demand
-- Singleflight on backing-store pulls
-- A two-node demo with measured numbers: local hit latency, invalidation
-  propagation time, bandwidth per write
+## Implemented (local foundation — partial P0)
 
-**Explicitly out of scope for v1** (tracked as v2+/future, not partially
-started):
+Useful building blocks; **not** a hybrid cluster yet.
 
-- Independent mode (vector clocks, siblings, custom merge, partition healing)
-- Postgres, MySQL, MongoDB, Memcached backing stores
-- EC2 / Docker / Kubernetes / DNS discovery
-- TLS/mTLS, authentication, rate limiting (Phase 4.5)
-- Message compression, LFU eviction, tracing, audit logging, rebalancing,
-  backup/restore
+| Area | Location | Notes |
+|------|----------|--------|
+| Local memory storage | `internal/storage`, `internal/storage/memory` | Sharded map, LRU, TTL, injectable clock |
+| Local cache manager | `internal/cache` | Wraps storage; public error translation |
+| Public API | `pkg/gossipcache` | `Cache` interface, sentinels, `ServiceRegistry` |
+| Library constructor | `pkg/gossipcache/inmemory` | Wires manager + memory engine |
+| Config | `internal/config` | Hybrid-shaped defaults (L2 ports, W, freshness); L2 not wired |
+| Observability | `internal/observability` | slog + basic L1 Prometheus counters + metrics HTTP service |
+| Example | `examples/server` | Local L1 + metrics only (`-tags example`) |
+| Benchmarks | `test/benchmark` | Local cache microbench |
 
-## Implemented
+## Not started (by phase)
 
-- **Local cache** (`internal/cache`, `internal/storage/memory`): sharded
-  in-memory storage, LRU eviction, TTL expiration, injectable clock,
-  deterministic tests.
-- **Public API** (`pkg/gossipcache`): `Cache` interface, error sentinels,
-  generic `ServiceRegistry` with ordered start / reverse shutdown,
-  `inmemory.New` constructor for library use.
-- **Config** (`internal/config`): YAML loading and validation.
-- **Observability** (`internal/observability`): slog-based logging,
-  Prometheus metrics, metrics service lifecycle.
-- **Redis backing store adapter** (`internal/backingstore`,
-  `internal/backingstore/redis`): `BackingStore` interface, Redis/Valkey
-  adapter with atomic Lua version-bump + TTL, `ErrKeyNotFound` sentinel,
-  miniredis-based tests. Not yet wired into the cache manager.
+| Phase | Work |
+|------:|------|
+| P0 remainder | Public facade `New(cfg)`, `VersionTag` types, in-memory L2 fake + basic L1↔backend path |
+| P1 | L1 state machine (EMPTY/FETCHING/VALID/STALE), singleflight, apply invalidation |
+| P2 | Control plane frames/streams, interest, W confirms |
+| P3 | Durable L2 hub (journal, commit, RPC server, `cmd/l2`) |
+| P4 | Health/readiness, held-key anti-entropy, K8s manifests, min metrics hooks |
+| P5 | Full observability suite |
+| P6 | Security (mTLS production path) |
+| P7 | Multi-process demo + polish |
+| P8 | Performance optims after baselines |
 
-## In Progress
+## Removed / non-v1
 
-- Backed-mode integration: connecting `internal/cache.Manager` to a
-  `BackingStore` (read-through / write-through, version tracking).
+- **`internal/backingstore` + Redis adapter** — removed; Redis-as-SoT is a SEMANTICS non-goal.
+- Config fields for **UDP gossip**, **independent mode**, and **memberlist-era** network ports — removed in favor of L2 hub settings.
 
-## Not Started
+Historical ADRs (memberlist, Redis-era evict-on-notify) remain under `docs/adr/` as history; they do not define v1.
 
-- Gossip engine and membership: build as a `hashicorp/memberlist` delegate
-  per accepted [ADR-0001](adr/0001-gossip-transport.md); invalidation
-  semantics are evict-on-notify per [ADR-0002](adr/0002-evict-on-notify.md).
-  No custom transport, wire protocol, connection pool, or peer manager.
-- Anti-entropy (evict-based reconciliation per ADR-0002)
-- Benchmarks validating the README performance claims (v1 contract numbers:
-  local hit latency, invalidation propagation time, bandwidth per write)
+## Known debt
 
-## Resolved Design Questions
+- Package layout still uses `internal/cache` + `internal/storage` rather than the target `internal/l1` / `internal/l2` / `internal/control` tree in PHASE_PLAN; reorganize when P0–P1 land.
+- Empty `internal/util/` and `test/integration/` placeholders.
+- `docs/impl/IMPLEMENTATION_GUIDE.md` is legacy (Redis/gossip walkthrough); non-normative.
 
-- **Delete tombstones**: resolved by [ADR-0002](adr/0002-evict-on-notify.md).
-  A delete broadcasts the same invalidation as a write; the backing store is
-  the source of truth, so `ErrKeyNotFound` on re-pull is an ordinary miss and
-  backed mode needs no tombstones.
-- **Interest/held-set semantics**: resolved by
-  [ADR-0002](adr/0002-evict-on-notify.md). Nodes evict on notification instead
-  of pulling, so nodes that do not hold a key do nothing and the
-  thundering-herd problem never arises.
-
-## Known Debt
-
-- `docs/impl/GAP_ANALYSIS.md` checkmarks describe *plan* coverage, not
-  implementation (see the banner in that file).
-- Phase docs contain day-level estimates that are not tracked or updated;
-  treat them as design references, not schedules.
+Prefer **SEMANTICS** and **PHASE_PLAN** when any older doc conflicts.

@@ -4,42 +4,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-GossipCache is a distributed key-value cache that automatically synchronizes across nodes using the gossip protocol. This allows for eventual consistency across a cluster of cache nodes without requiring a central coordinator.
+GossipCache is a hybrid **L1 + native L2 hub** cache: hot reads stay in-process;
+the hub owns versions and invalidation streams. See [docs/SEMANTICS.md](docs/SEMANTICS.md).
 
-**Core Philosophy**: Caches must be local. If accessing a cache requires a network call, you're just pushing the problem elsewhere. GossipCache provides in-memory, local cache with microsecond access times while using gossip protocol to maintain consistency across nodes.
+**Core Philosophy**: Caches must be local. If every read needs a network hop, you have not solved caching.
 
 ## Project Status
 
-This is an early-stage project. The codebase structure and commands below will be populated as the project develops.
+Local in-memory L1 foundation only. Hybrid hub/streams not implemented.
+Honest inventory: [docs/STATUS.md](docs/STATUS.md). Phases: [docs/impl/PHASE_PLAN.md](docs/impl/PHASE_PLAN.md).
 
 ## Development Commands
 
 ```bash
-# Initialize Go module (if not already done)
-go mod init github.com/sanketnaik/gossipcache
-
-# Run tests
+make test
+make test-short
+make coverage
+make fmt
+make vet
+make build
 go test ./...
-
-# Run tests with coverage
-go test -cover ./...
-
-# Run tests with verbose output
-go test -v ./...
-
-# Run a specific test
 go test -run TestName ./path/to/package
-
-# Build the project
-go build ./...
-
-# Format code
-go fmt ./...
-
-# Run linter (requires golangci-lint)
 golangci-lint run
-
-# Tidy dependencies
 go mod tidy
 ```
 
@@ -70,11 +56,10 @@ go mod tidy
 **Core Components:**
 
 - **L1 state machine**: EMPTY / FETCHING / VALID / STALE; stale-serve policies
-- **L2 hub**: version tag `(partition_id, partition_term, sequence)`, separate `cluster_generation`, fencing, tiers, changefeed
-- **Control plane**: `stream_id = (partition_id, partition_term)`; L2-only `stream_sequence`; application acks after apply; `StreamCheckpoint` freshness
-- **Independent gossip**: full-value propagation + vector clocks
-- **Anti-entropy**: held-key summaries vs L2 (backed); merkle/full sync (independent)
-- **Observability**: readiness as consistency signal (gaps + freshness); H4 minimum metrics; Phase 5 full suite
+- **L2 hub**: version tag `(partition_id, sequence)` + `hub_generation`; durable journal; changefeed sole invalidation publisher
+- **Control plane**: mTLS TCP streams; L2-only `stream_sequence`; application acks after apply; `StreamCheckpoint` freshness
+- **Anti-entropy**: held-key summaries vs L2 (hybrid)
+- **Observability**: readiness as consistency signal (gaps + freshness); H4 minimum metrics; P5 full suite
 
 **Performance Goals:**
 - Local L1 hit: &lt; 1ms p99 objective; sub-µs only as measured benchmark claim

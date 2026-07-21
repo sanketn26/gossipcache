@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -43,14 +44,8 @@ func loadFromFile(cfg *Config, path string) error {
 }
 
 func loadFromEnv(cfg *Config) error {
-	if v := os.Getenv("MODE"); v != "" {
-		cfg.Mode = OperatingMode(v)
-	}
 	if v := os.Getenv("NODE_ID"); v != "" {
 		cfg.NodeID = v
-	}
-	if v := os.Getenv("ADDRESS"); v != "" {
-		cfg.Address = v
 	}
 
 	if v := os.Getenv("CACHE_MAX_SIZE"); v != "" {
@@ -70,20 +65,43 @@ func loadFromEnv(cfg *Config) error {
 	if v := os.Getenv("CACHE_EVICTION_POLICY"); v != "" {
 		cfg.Cache.EvictionPolicy = v
 	}
-
-	if v := os.Getenv("TCP_PORT"); v != "" {
-		parsed, err := strconv.Atoi(v)
-		if err != nil {
-			return fmt.Errorf("parse TCP_PORT=%q: %w", v, err)
-		}
-		cfg.Network.TCPPort = parsed
+	if v := os.Getenv("CACHE_STALE_POLICY"); v != "" {
+		cfg.Cache.StalePolicy = v
 	}
-	if v := os.Getenv("UDP_PORT"); v != "" {
+
+	if v := os.Getenv("L2_ADDRESSES"); v != "" {
+		cfg.L2.Addresses = splitCSV(v)
+	}
+	if v := os.Getenv("L2_RPC_PORT"); v != "" {
 		parsed, err := strconv.Atoi(v)
 		if err != nil {
-			return fmt.Errorf("parse UDP_PORT=%q: %w", v, err)
+			return fmt.Errorf("parse L2_RPC_PORT=%q: %w", v, err)
 		}
-		cfg.Network.UDPPort = parsed
+		cfg.L2.RPCPort = parsed
+	}
+	if v := os.Getenv("L2_STREAM_PORT"); v != "" {
+		parsed, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parse L2_STREAM_PORT=%q: %w", v, err)
+		}
+		cfg.L2.StreamPort = parsed
+	}
+	if v := os.Getenv("L2_STREAM_FRESHNESS_TIMEOUT"); v != "" {
+		parsed, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("parse L2_STREAM_FRESHNESS_TIMEOUT=%q: %w", v, err)
+		}
+		cfg.L2.StreamFreshnessTimeout = parsed
+	}
+	if v := os.Getenv("L2_DEFAULT_WRITE_W"); v != "" {
+		parsed, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parse L2_DEFAULT_WRITE_W=%q: %w", v, err)
+		}
+		cfg.L2.DefaultWriteW = parsed
+	}
+	if v := os.Getenv("L2_MGMT_LISTEN"); v != "" {
+		cfg.L2.MgmtListen = v
 	}
 
 	if v := os.Getenv("LOG_LEVEL"); v != "" {
@@ -100,6 +118,9 @@ func loadFromEnv(cfg *Config) error {
 		}
 		cfg.Metrics.Enabled = parsed
 	}
+	if v := os.Getenv("METRICS_LISTEN"); v != "" {
+		cfg.Metrics.Listen = v
+	}
 	if v := os.Getenv("METRICS_PORT"); v != "" {
 		parsed, err := strconv.Atoi(v)
 		if err != nil {
@@ -109,4 +130,16 @@ func loadFromEnv(cfg *Config) error {
 	}
 
 	return nil
+}
+
+func splitCSV(v string) []string {
+	parts := strings.Split(v, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

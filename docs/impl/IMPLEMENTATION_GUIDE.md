@@ -1,10 +1,17 @@
 # GossipCache Implementation Guide
 
-> ⚠️ **Design reference (2025-01-30), partially superseded.** The v1 scope is
-> defined in [../STATUS.md](../STATUS.md). Step 6 (gossip codec), Step 7
-> (network transport and backpressure), and the peer-management parts of later
-> steps are superseded by [ADR-0001](../adr/0001-gossip-transport.md)
-> (memberlist). Step 8's backed-mode gossip semantics are superseded by
+> ⚠️ **Design reference (2025-01-30), partially superseded — non-normative.**
+> The v1 scope is defined in [../STATUS.md](../STATUS.md). This document is kept
+> for history only; where it disagrees with STATUS.md, STATUS.md wins.
+>
+> Specifically: the **backing-store / Redis** walkthrough (the
+> `internal/backingstore/*` interface, the Redis adapter, and the Redis-backed
+> cluster demo) no longer reflects the codebase — that package has been removed
+> and Redis-as-source-of-truth is a [SEMANTICS](../SEMANTICS.md) non-goal. Step
+> 6 (gossip codec), Step 7 (network transport and backpressure), and the
+> peer-management parts of later steps are superseded by
+> [ADR-0001](../adr/0001-gossip-transport.md) (memberlist). Step 8's
+> backed-mode gossip semantics are superseded by
 > [ADR-0002](../adr/0002-evict-on-notify.md) (evict-on-notify, no checksum,
 > delete = invalidation). Steps 9–13 (vector clocks, conflict resolvers,
 > independent mode, discovery) are v2+.

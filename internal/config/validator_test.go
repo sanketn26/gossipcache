@@ -17,6 +17,9 @@ func TestValidateAcceptsValidConfigAndPopulatesNodeID(t *testing.T) {
 	if cfg.NodeID == "" {
 		t.Fatal("NodeID is empty, want hostname populated")
 	}
+	if cfg.Metrics.Listen != ":9090" {
+		t.Fatalf("Metrics.Listen = %q, want :9090 after normalize", cfg.Metrics.Listen)
+	}
 }
 
 func TestValidateAllowsExplicitNodeID(t *testing.T) {
@@ -39,13 +42,6 @@ func TestValidateRejectsInvalidConfig(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name: "invalid mode",
-			mutate: func(cfg *Config) {
-				cfg.Mode = OperatingMode("bad")
-			},
-			wantErr: "invalid mode",
-		},
-		{
 			name: "non-positive cache size",
 			mutate: func(cfg *Config) {
 				cfg.Cache.MaxSize = 0
@@ -60,39 +56,53 @@ func TestValidateRejectsInvalidConfig(t *testing.T) {
 			wantErr: "cache.default_ttl cannot be negative",
 		},
 		{
-			name: "non-positive gossip fanout",
+			name: "bad stale policy",
 			mutate: func(cfg *Config) {
-				cfg.Gossip.Fanout = 0
+				cfg.Cache.StalePolicy = "always"
 			},
-			wantErr: "gossip.fanout must be positive",
+			wantErr: "invalid cache.stale_policy",
 		},
 		{
-			name: "tcp port too low",
+			name: "unsupported eviction",
 			mutate: func(cfg *Config) {
-				cfg.Network.TCPPort = 0
+				cfg.Cache.EvictionPolicy = "fifo"
 			},
-			wantErr: "invalid tcp_port",
+			wantErr: "cache.eviction_policy",
 		},
 		{
-			name: "tcp port too high",
+			name: "rpc port too low",
 			mutate: func(cfg *Config) {
-				cfg.Network.TCPPort = 65536
+				cfg.L2.RPCPort = 0
 			},
-			wantErr: "invalid tcp_port",
+			wantErr: "invalid l2.rpc_port",
 		},
 		{
-			name: "udp port too low",
+			name: "stream port too high",
 			mutate: func(cfg *Config) {
-				cfg.Network.UDPPort = 0
+				cfg.L2.StreamPort = 65536
 			},
-			wantErr: "invalid udp_port",
+			wantErr: "invalid l2.stream_port",
 		},
 		{
-			name: "udp port too high",
+			name: "negative write W",
 			mutate: func(cfg *Config) {
-				cfg.Network.UDPPort = 65536
+				cfg.L2.DefaultWriteW = -1
 			},
-			wantErr: "invalid udp_port",
+			wantErr: "l2.default_write_w cannot be negative",
+		},
+		{
+			name: "bad mgmt listen",
+			mutate: func(cfg *Config) {
+				cfg.L2.MgmtListen = "not-a-listen-addr"
+			},
+			wantErr: "invalid l2.mgmt_listen",
+		},
+		{
+			name: "empty l2 address entry",
+			mutate: func(cfg *Config) {
+				cfg.L2.Addresses = []string{"hub:7400", "  "}
+			},
+			wantErr: "l2.addresses[1] is empty",
 		},
 		{
 			name: "negative max_key_size",

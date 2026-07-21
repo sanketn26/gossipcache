@@ -10,9 +10,14 @@ import (
 	"github.com/sanketn26/gossipcache/pkg/gossipcache"
 )
 
-// Manager coordinates cache operations against an injected storage engine and
-// translates internal storage errors into the public sentinels exported from
-// pkg/gossipcache so callers can use errors.Is across the package boundary.
+// Manager coordinates local L1 cache operations against an injected storage
+// engine and translates internal storage errors into the public sentinels
+// exported from pkg/gossipcache so callers can use errors.Is across the
+// package boundary.
+//
+// This is the single-process storage path. Hybrid L1 state machine (VALID /
+// STALE / FETCHING), L2 RPC, and invalidation streams are later phases
+// (docs/impl/PHASE_PLAN.md P1+).
 type Manager struct {
 	storage storage.Storage
 	config  *CacheConfig

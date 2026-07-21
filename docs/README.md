@@ -5,6 +5,7 @@
 | Doc | Purpose |
 |-----|---------|
 | **[SEMANTICS.md](SEMANTICS.md)** | **Locked v1 semantics and design choices** |
+| **[STATUS.md](STATUS.md)** | **What is actually implemented** |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Short system shape |
 | [diagrams/SEQUENCES.md](diagrams/SEQUENCES.md) | Read/write/stream flows |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | K8s / Docker / EC2 sketch |
@@ -14,11 +15,13 @@
 
 | Doc | Purpose |
 |-----|---------|
-| [impl/PHASE_PLAN.md](impl/PHASE_PLAN.md) | **Code-level phases + functional deliverables** |
+| [impl/PHASE_PLAN.md](impl/PHASE_PLAN.md) | **Phases P0–P8 + functional deliverables** |
 | [impl/HYBRID_BACKED_MODE.md](impl/HYBRID_BACKED_MODE.md) | Wire, SM detail |
 | [impl/TESTING_STRATEGY.md](impl/TESTING_STRATEGY.md) | What to test |
-| [impl/PHASE_5_OBSERVABILITY.md](impl/PHASE_5_OBSERVABILITY.md) | Observability phase |
-| [impl/README.md](impl/README.md) | Impl index |
+| [impl/PHASE_05_OBSERVABILITY.md](impl/PHASE_05_OBSERVABILITY.md) | P5 observability |
+| [impl/PHASE_06_SECURITY.md](impl/PHASE_06_SECURITY.md) | P6 security |
+| [impl/PHASE_07_DEMO_POLISH.md](impl/PHASE_07_DEMO_POLISH.md) | P7 demo / polish |
+| [impl/README.md](impl/README.md) | Impl index + sequence |
 
 ## Reading order
 

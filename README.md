@@ -4,38 +4,54 @@ In-process **L1** cache + native authoritative **L2 hub**. Hot reads stay local;
 
 **Caches must be local.** If every read needs a network hop, you have not solved caching.
 
-## v1 features
+## v1 target
 
-- Embedded L1 (hits in microseconds–milliseconds range depending on hardware)
+- Embedded L1 (hits stay in-process)
 - L2 hub as source of truth (durable version + invalidation on every write)
 - Control plane: mTLS TCP invalidations (key + version); values via L2 RPC on miss
-- Partitioned streams for hub scale; interest + held-key apply (not update-all-nodes)
-- Tunable write **W** (default 0 = async peers; higher W optional and costly)
+- Partitioned streams; interest + held-key apply
+- Tunable write **W** (default 0 = async peers)
 - Stale-serve policies; consistency-aware readiness
 
-**Not v1 focus:** independent full-value gossip, Redis-as-SoT.
+**Not v1:** independent full-value gossip, Redis-as-SoT.
 
 ## Status
 
-Early design / pre-implementation. Semantics are locked in docs; code follows.
+**Local L1 foundation only** (in-memory cache, config, basic metrics). Hybrid hub, streams, and multi-node demos are not implemented yet.
+
+Honest inventory: **[docs/STATUS.md](docs/STATUS.md)**  
+Locked semantics: **[docs/SEMANTICS.md](docs/SEMANTICS.md)**  
+Build plan: **[docs/impl/PHASE_PLAN.md](docs/impl/PHASE_PLAN.md)** (P0–P8)
 
 ## Documentation
 
 | Doc | Role |
 |-----|------|
 | **[docs/SEMANTICS.md](docs/SEMANTICS.md)** | **All semantics and choices** |
+| [docs/STATUS.md](docs/STATUS.md) | What is actually built |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Short overview |
-| [docs/diagrams/SEQUENCES.md](docs/diagrams/SEQUENCES.md) | Flows |
-| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Deploy sketch |
-| [docs/impl/TESTING_STRATEGY.md](docs/impl/TESTING_STRATEGY.md) | Test plan |
+| [docs/impl/PHASE_PLAN.md](docs/impl/PHASE_PLAN.md) | Phases P0–P8 |
 | [docs/README.md](docs/README.md) | Full index |
 
 ## Develop
 
 ```bash
-go test ./...
-go test -cover ./...
-go build ./...
+make test        # go test -v -race ./...
+make test-short
+make fmt
+make vet
+make build       # example binary (library has no default binary)
+```
+
+Library use today (local memory only):
+
+```go
+import "github.com/sanketn26/gossipcache/pkg/gossipcache/inmemory"
+
+cache, err := inmemory.New(inmemory.Options{
+    MaxSize:    1 << 30,
+    DefaultTTL: 5 * time.Minute,
+})
 ```
 
 ## License

@@ -1,15 +1,40 @@
 # Phased Implementation Plan (v1 hybrid) — code-level
 
-**Product rules:** [../SEMANTICS.md](../SEMANTICS.md) (wins on conflict)
-**Wire/algorithms:** [HYBRID_BACKED_MODE.md](HYBRID_BACKED_MODE.md)
-**Tests:** [TESTING_STRATEGY.md](TESTING_STRATEGY.md)
-**Observability detail:** [PHASE_5_OBSERVABILITY.md](PHASE_5_OBSERVABILITY.md)
+**Product rules:** [../SEMANTICS.md](../SEMANTICS.md) (wins on conflict)  
+**Wire/algorithms:** [HYBRID_BACKED_MODE.md](HYBRID_BACKED_MODE.md)  
+**Tests:** [TESTING_STRATEGY.md](TESTING_STRATEGY.md)  
 **API sketch:** [../TECHNICAL_SPEC.md](../TECHNICAL_SPEC.md)
 
-Module: `github.com/sanketn26/gossipcache` (`go.mod` already present).
+Module: `github.com/sanketn26/gossipcache` (`go.mod` already present).  
 Empty dirs under `internal/` today are **placeholders** — reorganize to the tree below; do not fill `backingstore/`, `vclock/`, or Redis paths for v1.
 
 Each **functional deliverable (FD)** is a mergeable unit: code + tests + checklist.
+
+---
+
+## Phase sequence
+
+| Phase | Name | Detail doc | Depends on |
+|------:|------|------------|------------|
+| **P0** | Foundation (facade, config, version, mem path) | this file | — |
+| **P1** | L1 state machine | this file | P0 |
+| **P2** | Control plane (streams, interest, W) | this file | P1 |
+| **P3** | L2 durable hub | this file | P2 (RPC client can land with P2) |
+| **P4** | Anti-entropy, health, K8s, min metrics | this file | P3 |
+| **P5** | Observability suite | [PHASE_05_OBSERVABILITY.md](PHASE_05_OBSERVABILITY.md) | P4 |
+| **P6** | Security hardening | [PHASE_06_SECURITY.md](PHASE_06_SECURITY.md) | P3–P4 (ports exist); before untrusted deploy |
+| **P7** | Demo, polish, sponsorship | [PHASE_07_DEMO_POLISH.md](PHASE_07_DEMO_POLISH.md) | P2–P4 minimum; better after P5 |
+| **P8** | Performance | this file | P5 baselines |
+
+```text
+P0 → P1 → P2 → P3 → P4 → P5 → P8
+                    ↘︎     ↘︎
+                     P6     P7
+```
+
+P6 and P7 can start once prerequisites are met; they must not block P0–P4 correctness work. P8 only after measured baselines (P5).
+
+Hybrid milestones in [HYBRID_BACKED_MODE.md](HYBRID_BACKED_MODE.md) map as: **H1→P1, H2→P2, H3→P3, H4→P4, H5→P8**.
 
 ---
 
@@ -71,7 +96,7 @@ gossipcache/
 │   ├── obs/
 │   │   ├── meter.go               # Meter interface + noop
 │   │   ├── names.go               # metric name constants
-│   │   └── prometheus.go          # P5 exporter
+│   │   └── prometheus.go          # P5 exporter (full suite)
 │   └── util/
 │       └── clock.go               # injectable time for tests
 ├── test/
@@ -671,7 +696,7 @@ Wire into `Client.Start`: listen `MgmtListen`.
 | | |
 |--|--|
 | **Files** | `internal/obs/names.go`, counters in l1/control/l2 hot paths |
-| **Code** | `Meter.Counter(name).Add(1)`; no-op default; optional Prometheus register in P5 |
+| **Code** | `Meter.Counter(name).Add(1)`; no-op default; full Prometheus register in P5 |
 
 **P4 exit:** ready never true with gap/stale checkpoint; `deployments/k8s` applies on kind/minikube smoke.
 
@@ -679,7 +704,7 @@ Wire into `Client.Start`: listen `MgmtListen`.
 
 ## P5 — Observability suite
 
-Break [PHASE_5_OBSERVABILITY.md](PHASE_5_OBSERVABILITY.md) into code FDs:
+Detail: **[PHASE_05_OBSERVABILITY.md](PHASE_05_OBSERVABILITY.md)**
 
 | FD | Deliverable |
 |----|-------------|
@@ -689,15 +714,55 @@ Break [PHASE_5_OBSERVABILITY.md](PHASE_5_OBSERVABILITY.md) into code FDs:
 | FD-P5.4 | Dashboard JSON + alert rules in `deployments/observability/` |
 | FD-P5.5 | Fault-to-signal table test harness |
 
+**P5 exit:** fault-to-signal coverage for critical failures; cardinality CI green; dashboards/alerts syntax-valid.
+
 ---
 
-## P6 — Performance (only after baselines)
+## P6 — Security hardening
+
+Detail: **[PHASE_06_SECURITY.md](PHASE_06_SECURITY.md)**
+
+Optional on trusted private nets; **required** before exposing RPC/stream/mgmt across untrusted networks.
 
 | FD | Deliverable |
 |----|-------------|
-| FD-P6.1 | Benchmark suite + published profile (hardware note) |
-| FD-P6.2 | Hot-tier / journal batching behind `Config` flags |
-| FD-P6.3 | Each optim: feature flag + A/B bench + correctness suite still green |
+| FD-P6.1 | Shared TLS builder + prod config validation |
+| FD-P6.2 | mTLS (or mesh identity) on L2 RPC + streams; `cluster_id` / `hub_generation` at connect |
+| FD-P6.3 | Restricted mgmt listen + authenticated debug/admin routes |
+| FD-P6.4 | Rate limits on RPC, stream subscribe/reconnect, mgmt HTTP |
+| FD-P6.5 | Cert rotation runbook + integration reject-rogue test |
+
+**P6 exit:** rogue client cannot write or subscribe when mTLS required; debug not anonymously public.
+
+---
+
+## P7 — Demo, polish, sponsorship
+
+Detail: **[PHASE_07_DEMO_POLISH.md](PHASE_07_DEMO_POLISH.md)**
+
+Release packaging, not core protocol work.
+
+| FD | Deliverable |
+|----|-------------|
+| FD-P7.1 | `make demo` — 1× hub + ≥2 L1s (Compose or local) |
+| FD-P7.2 | Scenario scripts (convergence, staleness, delete, hub/L1 restart) |
+| FD-P7.3 | Terminal or minimal dashboard |
+| FD-P7.4 | README rewrite + when-to-use; measured numbers with hardware notes |
+| FD-P7.5 | Repo hygiene (CI templates, CONTRIBUTING, CHANGELOG, funding) |
+
+**P7 exit:** clean-checkout demo proves local hits and hub-mediated invalidation; no Redis-as-SoT claims.
+
+---
+
+## P8 — Performance (only after baselines)
+
+| FD | Deliverable |
+|----|-------------|
+| FD-P8.1 | Benchmark suite + published profile (hardware note) against hybrid reference load |
+| FD-P8.2 | Hot-tier / journal batching behind `Config` flags |
+| FD-P8.3 | Each optim: feature flag + A/B bench + correctness suite still green |
+
+**P8 exit:** each optimization has metric, rollback switch, no SEMANTICS regression. Maps to hybrid milestone **H5**.
 
 ---
 
@@ -714,7 +779,10 @@ P0.1 → P0.2 → P0.3 → P0.4
                                     ↓
                     P4.1 → P4.2 → P4.3 → P4.4
                                     ↓
-                         P5.* → P6.*
+                              P5.1 … P5.5
+                               ↓         ↘
+                             P8.*         P7.* (after P2–P4 min)
+                    P3–P4 ──→ P6.* (security; before untrusted deploy)
 ```
 
 ---
@@ -732,13 +800,13 @@ P0.1 → P0.2 → P0.3 → P0.4
 
 ## Progress
 
-### P0
+### P0 — Foundation
 - [ ] FD-P0.1 Facade
 - [ ] FD-P0.2 Config
 - [ ] FD-P0.3 Version/partition
 - [ ] FD-P0.4 MemStore + basic cache
 
-### P1
+### P1 — L1 state machine
 - [ ] FD-P1.1 Slot/record
 - [ ] FD-P1.2 Machine
 - [ ] FD-P1.3 Singleflight
@@ -746,7 +814,7 @@ P0.1 → P0.2 → P0.3 → P0.4
 - [ ] FD-P1.5 ApplyInvalidation
 - [ ] FD-P1.6 Race tests
 
-### P2
+### P2 — Control plane
 - [ ] FD-P2.1 Frames
 - [ ] FD-P2.2 Messages
 - [ ] FD-P2.3 Stream server
@@ -755,7 +823,7 @@ P0.1 → P0.2 → P0.3 → P0.4
 - [ ] FD-P2.6 W
 - [ ] FD-P2.7 Integration
 
-### P3
+### P3 — L2 durable hub
 - [ ] FD-P3.1 Journal
 - [ ] FD-P3.2 Commit
 - [ ] FD-P3.3 Engine+RPC+cmd
@@ -763,11 +831,34 @@ P0.1 → P0.2 → P0.3 → P0.4
 - [ ] FD-P3.5 Recovery
 - [ ] FD-P3.6 Hub restart integration
 
-### P4
+### P4 — Anti-entropy, health, K8s
 - [ ] FD-P4.1 Health
 - [ ] FD-P4.2 Anti-entropy
 - [ ] FD-P4.3 K8s
 - [ ] FD-P4.4 Min metrics
 
-### P5 / P6
-- [ ] As FDs above
+### P5 — Observability
+- [ ] FD-P5.1 Prometheus exporter
+- [ ] FD-P5.2 Cardinality allowlist
+- [ ] FD-P5.3 OTel hooks
+- [ ] FD-P5.4 Dashboards + alerts
+- [ ] FD-P5.5 Fault-to-signal harness
+
+### P6 — Security
+- [ ] FD-P6.1 TLS builder
+- [ ] FD-P6.2 mTLS + generation checks
+- [ ] FD-P6.3 Mgmt auth
+- [ ] FD-P6.4 Rate limits
+- [ ] FD-P6.5 Rotation runbook + integration
+
+### P7 — Demo / polish
+- [ ] FD-P7.1 make demo
+- [ ] FD-P7.2 Scenarios
+- [ ] FD-P7.3 Dashboard/TUI
+- [ ] FD-P7.4 README + benches summary
+- [ ] FD-P7.5 Repo hygiene
+
+### P8 — Performance
+- [ ] FD-P8.1 Benchmark suite
+- [ ] FD-P8.2 Config-flagged optims
+- [ ] FD-P8.3 A/B + correctness gate

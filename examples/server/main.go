@@ -1,12 +1,13 @@
 //go:build example
 
-// Package main is an example binary that runs a gossipcache instance with the
-// Prometheus metrics endpoint enabled. It is excluded from the default build
-// so library consumers do not get a binary they did not ask for. Build it with
-// the `example` build tag:
+// Package main is an example binary that runs a local in-memory L1 cache with
+// the Prometheus metrics endpoint enabled. It is excluded from the default
+// build so library consumers do not get a binary they did not ask for.
 //
 //	go build -tags example -o bin/gossipcache-example ./examples/server
 //	go run -tags example ./examples/server -config config.yaml
+//
+// This is not a full hybrid hub + multi-L1 demo (see docs/impl/PHASE_07_DEMO_POLISH.md).
 package main
 
 import (
@@ -35,7 +36,7 @@ func main() {
 	}
 
 	logger := observability.NewLogger(cfg.Logging.Level, cfg.Logging.Format)
-	logger.Info("starting gossipcache example", "node_id", cfg.NodeID, "mode", cfg.Mode)
+	logger.Info("starting gossipcache local L1 example", "node_id", cfg.NodeID)
 
 	metrics := observability.NewMetrics(nil)
 

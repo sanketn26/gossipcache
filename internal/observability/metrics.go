@@ -10,8 +10,8 @@ import (
 
 const namespace = "gossipcache"
 
-// Metrics owns cache-level Prometheus collectors.
-// Later phases add gossip, network, and backing-store collectors here.
+// Metrics owns L1 cache Prometheus collectors.
+// Later phases (P5) extend this with stream, L2, and readiness instruments.
 type Metrics struct {
 	registry *prometheus.Registry
 

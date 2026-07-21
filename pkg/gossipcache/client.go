@@ -6,6 +6,10 @@ import (
 )
 
 // Cache is the public client-facing interface for cache operations.
+//
+// Today this is a local in-memory L1 surface (Get/Set/Delete, multi, stats).
+// Hybrid APIs (VersionTag, WriteOptions / W, Start/Stop, L2 wiring) land as
+// phases progress; see docs/TECHNICAL_SPEC.md and docs/SEMANTICS.md.
 type Cache interface {
 	// Get retrieves a value by key
 	Get(ctx context.Context, key string) ([]byte, error)

@@ -42,7 +42,7 @@ Independent full-value gossip is **out of scope for v1**.
 
 ## Observability
 
-Readiness is a consistency signal (gaps, stream freshness). Metrics/traces: [SEMANTICS §10](SEMANTICS.md#10-readiness), [impl/PHASE_5_OBSERVABILITY.md](impl/PHASE_5_OBSERVABILITY.md).
+Readiness is a consistency signal (gaps, stream freshness). Metrics/traces: [SEMANTICS §10](SEMANTICS.md#10-readiness), [impl/PHASE_05_OBSERVABILITY.md](impl/PHASE_05_OBSERVABILITY.md).
 
 ## See also
 

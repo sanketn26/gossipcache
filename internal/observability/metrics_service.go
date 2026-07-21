@@ -63,8 +63,13 @@ func (s *MetricsService) Start(ctx context.Context, cfg *config.Config) error {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", s.metrics.Handler())
 
+	addr := cfg.Metrics.Listen
+	if addr == "" {
+		addr = s.metrics.Address(cfg.Metrics.Port)
+	}
+
 	server := &http.Server{
-		Addr:    s.metrics.Address(cfg.Metrics.Port),
+		Addr:    addr,
 		Handler: mux,
 	}
 
