@@ -3,17 +3,19 @@
 Single source of truth for **what is built**. Design docs describe the target;
 a feature is only real if it appears under **Implemented**.
 
-_Last updated: 2026-07-21_
+_Last updated: 2026-07-22_
 
 ## Target (v1)
 
 Authoritative product rules: **[SEMANTICS.md](SEMANTICS.md)** — hybrid **L1 +
-native L2 hub**. Code-level phases: **[impl/PHASE_PLAN.md](impl/PHASE_PLAN.md)**
-(P0–P8).
+native L2 hub**. Implementation is tracked in independent Common, Hub and Node
+files per phase under [impl/](impl/README.md).
 
 | In scope | Out of scope for v1 |
 |----------|---------------------|
-| Embedded L1, native L2 hub as SoT | Redis/Postgres as version authority |
+| Embedded L1, memory-first L2 Hub as runtime authority | Redis/Postgres as version authority |
+| Opt-in Hub durability profile | Mandatory disk dependency for default mode |
+| Per-write Fast or Sync acknowledgement, independent of W | Treating peer confirmation as disk durability |
 | mTLS TCP invalidation streams from hub | UDP gossip / memberlist control plane |
 | VersionTag `(partition_id, sequence)` + `hub_generation` | Independent full-value gossip mode |
 | Tunable W (default 0), stale-serve, consistency readiness | Custom RUDP |
@@ -40,7 +42,7 @@ Useful building blocks; **not** a hybrid cluster yet.
 | P0 remainder | Public facade `New(cfg)`, `VersionTag` types, in-memory L2 fake + basic L1↔backend path |
 | P1 | L1 state machine (EMPTY/FETCHING/VALID/STALE), singleflight, apply invalidation |
 | P2 | Control plane frames/streams, interest, W confirms |
-| P3 | Durable L2 hub (journal, commit, RPC server, `cmd/l2`) |
+| P3 | Memory Hub store + RPC server; opt-in durability/recovery profile |
 | P4 | Health/readiness, held-key anti-entropy, K8s manifests, min metrics hooks |
 | P5 | Full observability suite |
 | P6 | Security (mTLS production path) |
@@ -56,8 +58,6 @@ Historical ADRs (memberlist, Redis-era evict-on-notify) remain under `docs/adr/`
 
 ## Known debt
 
-- Package layout still uses `internal/cache` + `internal/storage` rather than the target `internal/l1` / `internal/l2` / `internal/control` tree in PHASE_PLAN; reorganize when P0–P1 land.
+- Package layout still uses `internal/cache` + `internal/storage` rather than the target `internal/l1` / `internal/l2` / `internal/control` tree; reorganize when P0–P1 land.
 - Empty `internal/util/` and `test/integration/` placeholders.
-- `docs/impl/IMPLEMENTATION_GUIDE.md` is legacy (Redis/gossip walkthrough); non-normative.
-
-Prefer **SEMANTICS** and **PHASE_PLAN** when any older doc conflicts.
+Prefer **SEMANTICS** and the matching phase files when any older doc conflicts.

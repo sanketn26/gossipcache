@@ -7,7 +7,7 @@
 //	go build -tags example -o bin/gossipcache-example ./examples/server
 //	go run -tags example ./examples/server -config config.yaml
 //
-// This is not a full hybrid hub + multi-L1 demo (see docs/impl/PHASE_07_DEMO_POLISH.md).
+// This is not a full hybrid hub + multi-L1 demo (see docs/impl/node/NODE_PHASE_07_DEMO.md).
 package main
 
 import (

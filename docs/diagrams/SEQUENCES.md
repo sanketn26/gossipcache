@@ -41,8 +41,8 @@ sequenceDiagram
     participant B as L1 peer
 
     App->>A: Set(key,v)
-    A->>H: Set RPC
-    H->>H: value + VersionTag + stream event
+    A->>H: Set RPC (WriteFast default)
+    H->>H: atomic memory value + VersionTag + stream event
     H-->>A: OK, VersionTag
     A->>A: install VALID
     A-->>App: OK
@@ -60,8 +60,8 @@ sequenceDiagram
     participant B as L1 peer
 
     App->>A: Set(..., W=1)
-    A->>H: Set RPC (W=1 in request)
-    H->>H: durable commit first
+    A->>H: Set RPC (WriteFast/WriteSync, W=1)
+    H->>H: selected write-mode commit first
     H->>B: invalidate
     B->>B: apply if slot exists
     B-->>H: InvalidateConfirm (node_id dedup)

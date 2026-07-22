@@ -15,20 +15,15 @@
 
 | Doc | Purpose |
 |-----|---------|
-| [impl/PHASE_PLAN.md](impl/PHASE_PLAN.md) | **Phases P0–P8 + functional deliverables** |
-| [impl/HYBRID_BACKED_MODE.md](impl/HYBRID_BACKED_MODE.md) | Wire, SM detail |
-| [impl/TESTING_STRATEGY.md](impl/TESTING_STRATEGY.md) | What to test |
-| [impl/PHASE_05_OBSERVABILITY.md](impl/PHASE_05_OBSERVABILITY.md) | P5 observability |
-| [impl/PHASE_06_SECURITY.md](impl/PHASE_06_SECURITY.md) | P6 security |
-| [impl/PHASE_07_DEMO_POLISH.md](impl/PHASE_07_DEMO_POLISH.md) | P7 demo / polish |
-| [impl/README.md](impl/README.md) | Impl index + sequence |
+| [impl/README.md](impl/README.md) | **Common contract, Hub and Node file for every phase** |
+| [impl/README.md#test-strategy-and-phase-gates](impl/README.md#test-strategy-and-phase-gates) | Test pyramid, integration/fault matrix and P0–P8 exit gates |
 
 ## Reading order
 
 1. SEMANTICS
 2. ARCHITECTURE + SEQUENCES
-3. HYBRID (when implementing)
-4. TESTING_STRATEGY
+3. The matching Common, Hub or Node phase file
+4. The implementation index test gates
 5. DEPLOYMENT when shipping
 
 Older multi-file phase dumps (Redis-era, independent mode, gap analysis) were removed; recover from **Git history** if needed. Prefer SEMANTICS when anything conflicts.

@@ -1,7 +1,7 @@
 # Technical Specification (sketch)
 
 **Normative behavior:** [SEMANTICS.md](SEMANTICS.md)
-**Wire/state-machine detail:** [impl/HYBRID_BACKED_MODE.md](impl/HYBRID_BACKED_MODE.md)
+**Implementation contracts:** [impl/README.md](impl/README.md)
 
 This file is a thin **Go-facing sketch** only—not a second source of product rules.
 
@@ -35,45 +35,63 @@ const (
     ServeStaleWhileRevalidate
 )
 
-// W = 0 default (SEMANTICS §8).
+// Sketch only; the single frozen definition is Common P0.
 type WriteOptions struct {
-    W            int           // peer confirms before OK; 0 = async return
+    W            uint16        // peer confirms before OK; 0 = async return
+    Mode         WriteMode     // durability ack; WriteFast default
     ConfirmLevel ConfirmLevel  // InvalidateApplied in v1
     Timeout      time.Duration // when W > 0
 }
 
-type ConfirmLevel int
+type ConfirmLevel uint8
 const (
     ConfirmInvalidateApplied ConfirmLevel = iota
     // ConfirmValueVisible // later
 )
+
+// Durability acknowledgement, independent of W (SEMANTICS §7).
+type WriteMode uint8
+const (
+    WriteFast WriteMode = iota // ack on atomic hub memory commit (default)
+    WriteSync                  // ack after synchronous durability fence; needs durable hub
+)
+// WriteSync on a memory-only or unhealthy backend returns ErrDurabilityUnavailable.
+
+// Hub storage profile, fixed for a hub lifetime and advertised at handshake.
+type StorageProfile uint8
+const (
+    StorageMemory  StorageProfile = iota // ephemeral; new hub_generation each start (default)
+    StorageDurable                       // opt-in synchronous persistence + recovery
+)
 ```
 
-## Cache API
+## Public Node API
 
 ```go
-type Cache interface {
-    Get(ctx context.Context, key string) ([]byte, error)
-    Set(ctx context.Context, key string, value []byte, ttl time.Duration) error
-    SetWithOptions(ctx context.Context, key string, value []byte, ttl time.Duration, opt WriteOptions) error
-    Delete(ctx context.Context, key string) error
-    DeleteWithOptions(ctx context.Context, key string, opt WriteOptions) error
-    Start(ctx context.Context) error
-    Stop(ctx context.Context) error
+type Client struct { /* unexported fields */ }
+func New(cfg Config) (*Client, error)
+func (c *Client) Get(ctx context.Context, key string) ([]byte, bool, error)
+func (c *Client) Set(ctx context.Context, key string, value []byte, ttl time.Duration, opts ...WriteOption) error
+func (c *Client) Delete(ctx context.Context, key string, opts ...WriteOption) error
+func (c *Client) Start(ctx context.Context) error
+func (c *Client) Stop(ctx context.Context) error
+```
+
+## Internal Hub seam
+
+This consumer-owned interface belongs to `internal/l1`; it is not exported API.
+Control-stream consumption is a separate `internal/control` responsibility.
+
+```go
+type HubClient interface {
+    Get(ctx context.Context, key []byte, min *VersionTag) (GetResult, error)
+    Set(ctx context.Context, key, value []byte, ttl time.Duration, opt WriteOptions) (VersionTag, error)
+    Delete(ctx context.Context, key []byte, opt WriteOptions) (VersionTag, error)
 }
 ```
 
-## L2 client
-
-```go
-type L2Client interface {
-    Get(ctx context.Context, key string, min *VersionTag) (val []byte, ver VersionTag, ttl time.Duration, err error)
-    Set(ctx context.Context, key string, value []byte, ttl time.Duration) (VersionTag, error)
-    Delete(ctx context.Context, key string) (VersionTag, error)
-    SubscribeInvalidations(ctx context.Context, partitions []uint32) (<-chan InvalidationBatch, error)
-    Close() error
-}
-```
+`GetResult` includes value/tombstone kind, version, TTL, status and
+`HubGeneration`, as frozen by Common P1/P3.
 
 ## Config (illustrative)
 
@@ -82,7 +100,9 @@ type Config struct {
     NodeID              string
     L2Addresses         []string
     StalePolicy         StalePolicy
-    DefaultWriteW       int           // 0
+    DefaultWriteW       uint16        // 0
+    DefaultWriteMode    WriteMode     // WriteFast
+    // Hub storage profile is advertised by the handshake, not selected by Node.
     StreamFreshnessTimeout time.Duration
     TCPPortRPC          int           // e.g. 7400 toward hub
     TCPPortControl      int           // e.g. 7401 streams
@@ -102,4 +122,5 @@ type Config struct {
 
 ## Out of scope here
 
-Protobuf/binary layouts, full state transition tables, metrics catalog → [impl/HYBRID_BACKED_MODE.md](impl/HYBRID_BACKED_MODE.md).
+The authoritative API/type definitions, wire layouts, transitions and metrics
+are owned by their [phase files](impl/README.md); this sketch must follow them.

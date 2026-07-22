@@ -1,13 +1,16 @@
 # GossipCache
 
-In-process **L1** cache + native authoritative **L2 hub**. Hot reads stay local; the hub owns versions and invalidations.
+In-process **L1** cache + native memory-first **L2 hub**. Hot reads stay local;
+the Hub owns runtime versions and invalidations. Restart durability is opt-in.
 
 **Caches must be local.** If every read needs a network hop, you have not solved caching.
 
 ## v1 target
 
 - Embedded L1 (hits stay in-process)
-- L2 hub as source of truth (durable version + invalidation on every write)
+- Memory-first L2 Hub as runtime authority (value + version + invalidation on every write)
+- Optional synchronous durability profile for restart recovery
+- Per-write `WriteFast` (memory acknowledgement) or `WriteSync` (durability fence)
 - Control plane: mTLS TCP invalidations (key + version); values via L2 RPC on miss
 - Partitioned streams; interest + held-key apply
 - Tunable write **W** (default 0 = async peers)
@@ -20,8 +23,9 @@ In-process **L1** cache + native authoritative **L2 hub**. Hot reads stay local;
 **Local L1 foundation only** (in-memory cache, config, basic metrics). Hybrid hub, streams, and multi-node demos are not implemented yet.
 
 Honest inventory: **[docs/STATUS.md](docs/STATUS.md)**  
-Locked semantics: **[docs/SEMANTICS.md](docs/SEMANTICS.md)**  
-Build plan: **[docs/impl/PHASE_PLAN.md](docs/impl/PHASE_PLAN.md)** (P0–P8)
+Locked semantics: **[docs/SEMANTICS.md](docs/SEMANTICS.md)**
+
+Build phases: **[common contracts · hub · node](docs/impl/README.md)**
 
 ## Documentation
 
@@ -30,7 +34,7 @@ Build plan: **[docs/impl/PHASE_PLAN.md](docs/impl/PHASE_PLAN.md)** (P0–P8)
 | **[docs/SEMANTICS.md](docs/SEMANTICS.md)** | **All semantics and choices** |
 | [docs/STATUS.md](docs/STATUS.md) | What is actually built |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Short overview |
-| [docs/impl/PHASE_PLAN.md](docs/impl/PHASE_PLAN.md) | Phases P0–P8 |
+| [docs/impl/README.md](docs/impl/README.md) | Common, Hub and Node files per phase |
 | [docs/README.md](docs/README.md) | Full index |
 
 ## Develop

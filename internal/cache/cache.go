@@ -17,7 +17,7 @@ import (
 //
 // This is the single-process storage path. Hybrid L1 state machine (VALID /
 // STALE / FETCHING), L2 RPC, and invalidation streams are later phases
-// (docs/impl/PHASE_PLAN.md P1+).
+// (docs/impl/node/NODE_PHASE_01_STATE_MACHINE.md).
 type Manager struct {
 	storage storage.Storage
 	config  *CacheConfig

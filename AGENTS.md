@@ -17,7 +17,7 @@ github.com/sanketn26/gossipcache
 full-value gossip are out of scope for v1.
 
 **Code today:** local in-memory L1 only. See [docs/STATUS.md](docs/STATUS.md).
-Build order: [docs/impl/PHASE_PLAN.md](docs/impl/PHASE_PLAN.md) (P0–P8).
+Build order: [docs/impl/README.md](docs/impl/README.md) (Common, Hub and Node files per phase, P0–P8).
 
 ## Repository Map
 
@@ -33,7 +33,7 @@ Build order: [docs/impl/PHASE_PLAN.md](docs/impl/PHASE_PLAN.md) (P0–P8).
 - `docs/`: architecture, deployment, diagrams, and implementation planning.
 
 Target packages (`internal/l1`, `internal/l2`, `internal/control`, `cmd/l2`, …)
-are planned in PHASE_PLAN but not implemented yet. Verify the tree before editing.
+are planned in the phase files but not implemented yet. Verify the tree before editing.
 
 ## Development Commands
 
