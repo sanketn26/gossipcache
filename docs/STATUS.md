@@ -3,7 +3,7 @@
 Single source of truth for **what is built**. Design docs describe the target;
 a feature is only real if it appears under **Implemented**.
 
-_Last updated: 2026-07-22_
+_Last updated: 2026-07-23_
 
 ## Target (v1)
 
@@ -20,26 +20,20 @@ files per phase under [impl/](impl/README.md).
 | VersionTag `(partition_id, sequence)` + `hub_generation` | Independent full-value gossip mode |
 | Tunable W (default 0), stale-serve, consistency readiness | Custom RUDP |
 
-## Implemented (local foundation — partial P0)
+## Implemented (common contracts — partial P0)
 
 Useful building blocks; **not** a hybrid cluster yet.
 
 | Area | Location | Notes |
 |------|----------|--------|
-| Local memory storage | `internal/storage`, `internal/storage/memory` | Sharded map, LRU, TTL, injectable clock |
-| Local cache manager | `internal/cache` | Wraps storage; public error translation |
-| Public API | `pkg/gossipcache` | `Cache` interface, sentinels, `ServiceRegistry` |
-| Library constructor | `pkg/gossipcache/inmemory` | Wires manager + memory engine |
-| Config | `internal/config` | Hybrid-shaped defaults (L2 ports, W, freshness); L2 not wired |
-| Observability | `internal/observability` | slog + basic L1 Prometheus counters + metrics HTTP service |
-| Example | `examples/server` | Local L1 + metrics only (`-tags example`) |
-| Benchmarks | `test/benchmark` | Local cache microbench |
+| Shared wire contracts | `internal/wire` | Versions, mutation IDs, bounded requests, write/storage modes, statuses, protocol compatibility and byte-copy rules |
+| Partition routing | `internal/wire` | Seeded xxHash64 routing with shared golden vectors |
 
 ## Not started (by phase)
 
 | Phase | Work |
 |------:|------|
-| P0 remainder | Public facade `New(cfg)`, `VersionTag` types, in-memory L2 fake + basic L1↔backend path |
+| P0 remainder | Public facade `New(cfg)`, in-memory L2 fake + basic L1↔backend path |
 | P1 | L1 state machine (EMPTY/FETCHING/VALID/STALE), singleflight, apply invalidation |
 | P2 | Control plane frames/streams, interest, W confirms |
 | P3 | Memory Hub store + RPC server; opt-in durability/recovery profile |
@@ -58,6 +52,6 @@ Historical ADRs (memberlist, Redis-era evict-on-notify) remain under `docs/adr/`
 
 ## Known debt
 
-- Package layout still uses `internal/cache` + `internal/storage` rather than the target `internal/l1` / `internal/l2` / `internal/control` tree; reorganize when P0–P1 land.
-- Empty `internal/util/` and `test/integration/` placeholders.
+- Hub and Node packages do not exist yet; their P0 foundations must consume the
+  shared `internal/wire` contracts without redefining them.
 Prefer **SEMANTICS** and the matching phase files when any older doc conflicts.

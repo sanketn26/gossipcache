@@ -20,14 +20,14 @@ retained/returned mutable bytes are copied at boundaries.
 
 ## Decisions
 
-- [ ] Freeze hash algorithm, seed, byte interpretation and modulo behavior.
-- [ ] Publish golden key-to-partition vectors.
-- [ ] Freeze bounded Get/Set/Delete models, TTL units and status codes.
-- [ ] Define stable mutation request ID shape.
-- [ ] Define `WriteMode` with `WriteFast` default and explicit `WriteSync`, kept
+- [x] Freeze hash algorithm, seed, byte interpretation and modulo behavior.
+- [x] Publish golden key-to-partition vectors.
+- [x] Freeze bounded Get/Set/Delete models, TTL units and status codes.
+- [x] Define stable mutation request ID shape.
+- [x] Define `WriteMode` with `WriteFast` default and explicit `WriteSync`, kept
   independent from peer-confirmation `W`.
-- [ ] Define protocol compatibility/version fields.
-- [ ] Define `memory` as the default Hub storage profile and reject durable mode
+- [x] Define protocol compatibility/version fields.
+- [x] Define `memory` as the default Hub storage profile and reject durable mode
   without valid persistence configuration.
 
 ## Implementation detail

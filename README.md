@@ -20,7 +20,9 @@ the Hub owns runtime versions and invalidations. Restart durability is opt-in.
 
 ## Status
 
-**Local L1 foundation only** (in-memory cache, config, basic metrics). Hybrid hub, streams, and multi-node demos are not implemented yet.
+**Common P0 contracts only** (identity, routing, bounded request models, status
+and compatibility types). The Hub, Node facade, streams, and multi-node demos
+are not implemented yet.
 
 Honest inventory: **[docs/STATUS.md](docs/STATUS.md)**  
 Locked semantics: **[docs/SEMANTICS.md](docs/SEMANTICS.md)**
@@ -44,18 +46,6 @@ make test        # go test -v -race ./...
 make test-short
 make fmt
 make vet
-make build       # example binary (library has no default binary)
-```
-
-Library use today (local memory only):
-
-```go
-import "github.com/sanketn26/gossipcache/pkg/gossipcache/inmemory"
-
-cache, err := inmemory.New(inmemory.Options{
-    MaxSize:    1 << 30,
-    DefaultTTL: 5 * time.Minute,
-})
 ```
 
 ## License
