@@ -6,6 +6,27 @@ import (
 	"math/bits"
 )
 
+// Why a hand-rolled xxHash64 instead of a library:
+//
+// Partition routing is a frozen cross-process, cross-architecture contract:
+// every node and hub must map a key to the same partition. Two constraints
+// together rule out the obvious dependencies, so we vendor the ~70 lines below
+// rather than trust an external one:
+//
+//   - Seed. The contract freezes seed 0x9E3779B185EBCA87 (see partitionSeed).
+//     github.com/cespare/xxhash/v2 — the most-vetted Go xxHash — only hashes
+//     with seed 0 and exposes no seeded API, so it cannot reproduce the frozen
+//     vectors without reopening the spec.
+//   - Endianness. github.com/OneOfOne/xxhash supports a seed, but on big-endian
+//     ppc64 its build tags select an unsafe backend that reads words in native
+//     byte order, producing different hashes than little-endian nodes and
+//     silently violating the routing contract on that arch.
+//
+// This implementation reads every word via binary.LittleEndian, so it is
+// byte-order independent by construction and matches the frozen golden vectors
+// on every GOARCH. Keep it that way: prefer correctness-by-construction here
+// over an external dependency whose behavior is seed- or arch-conditional.
+
 // partitionSeed is the frozen xxHash64 seed for v1 partition routing. It is a
 // locked contract constant (COMMON_PHASE_00_CONTRACTS.md, "Partition routing")
 // and must match on every node and hub. Do not change it without amending the
@@ -40,10 +61,8 @@ func validatePartitionCount(partitionCount uint32) error {
 }
 
 // xxHash64 is a spec-compliant seeded xxHash64. It reads multi-byte words via
-// binary.LittleEndian, so results are identical on every GOARCH (big- and
-// little-endian alike). This byte-order independence is a routing-contract
-// requirement: all nodes and hubs must agree on partition placement regardless
-// of the architecture they run on.
+// binary.LittleEndian so results are identical on every GOARCH; see the
+// file-level comment for why this is a routing-contract requirement.
 func xxHash64(data []byte, seed uint64) uint64 {
 	var hash uint64
 	remaining := data
