@@ -4,9 +4,9 @@
 
 ## Decisions
 
-- [ ] Freeze `OK`, `NOT_FOUND`, `NOT_CAUGHT_UP` and terminal error behavior.
-- [ ] Define versioned tombstone and expiry response semantics.
-- [ ] Define deterministic fake hooks for blocked fetch, delayed mutation and
+- [x] Freeze `OK`, `NOT_FOUND`, `NOT_CAUGHT_UP` and terminal error behavior.
+- [x] Define versioned tombstone and expiry response semantics.
+- [x] Define deterministic fake hooks for blocked fetch, delayed mutation and
   injected failure.
 
 ## Implementation detail
@@ -19,8 +19,8 @@ implemented by both fake and real hub):
 ```go
 type HubClient interface {
     Get(ctx context.Context, key []byte, min *wire.VersionTag) (GetResult, error)
-    Set(ctx context.Context, key, value []byte, ttl time.Duration, opt WriteOptions) (wire.VersionTag, error)
-    Delete(ctx context.Context, key []byte, opt WriteOptions) (wire.VersionTag, error)
+    Set(ctx context.Context, key, value []byte, ttl time.Duration, opt wire.WriteOptions) (wire.VersionTag, error)
+    Delete(ctx context.Context, key []byte, opt wire.WriteOptions) (wire.VersionTag, error)
 }
 
 type GetResult struct {
@@ -28,10 +28,14 @@ type GetResult struct {
     HubGeneration uint64
     Version       wire.VersionTag
     TTL           time.Duration
-    Kind          RecordKind // Value | Tombstone
+    Kind          wire.RecordKind // Value | Tombstone
     Status        wire.Status
 }
 ```
+
+`GetResult.Validate` makes the response-shape rules executable, and
+`wire.Status.Class` freezes success, retryable and terminal handling. Unknown
+statuses fail closed as terminal.
 
 ### Response semantics to freeze
 
@@ -46,7 +50,8 @@ type GetResult struct {
 
 ### Deterministic fake hooks
 
-The fake exposes barrier-style hooks so races are orchestrated without sleeps:
+The common contract defines barrier-style hooks in `internal/l1`; the Hub fake
+implements them in Hub P1 so races are orchestrated without sleeps:
 
 ```go
 type FakeHooks struct {

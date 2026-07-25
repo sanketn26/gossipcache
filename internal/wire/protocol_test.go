@@ -98,3 +98,35 @@ func TestStatusValuesAndNames(t *testing.T) {
 		t.Fatalf("unknown status string = %q", got)
 	}
 }
+
+func TestStatusClassification(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		status wire.Status
+		class  wire.StatusClass
+	}{
+		{wire.StatusOK, wire.StatusClassSuccess},
+		{wire.StatusNotFound, wire.StatusClassSuccess},
+		{wire.StatusNotCaughtUp, wire.StatusClassRetryable},
+		{wire.StatusErrDurabilityUnavailable, wire.StatusClassTerminal},
+		{wire.StatusErrBadGeneration, wire.StatusClassTerminal},
+		{wire.StatusErrRateLimited, wire.StatusClassRetryable},
+		{wire.StatusErrInvalidArgument, wire.StatusClassTerminal},
+		{wire.StatusErrWriteConfirmTimeout, wire.StatusClassSuccess},
+		{wire.StatusErrInternal, wire.StatusClassTerminal},
+		{wire.Status(99), wire.StatusClassTerminal},
+	}
+
+	for _, test := range tests {
+		if got := test.status.Class(); got != test.class {
+			t.Errorf("%s.Class() = %d, want %d", test.status, got, test.class)
+		}
+		if got := test.status.Retryable(); got != (test.class == wire.StatusClassRetryable) {
+			t.Errorf("%s.Retryable() = %t", test.status, got)
+		}
+		if got := test.status.Terminal(); got != (test.class == wire.StatusClassTerminal) {
+			t.Errorf("%s.Terminal() = %t", test.status, got)
+		}
+	}
+}

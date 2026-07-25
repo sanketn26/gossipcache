@@ -24,6 +24,28 @@ func TestVersionTagIsNewer(t *testing.T) {
 	}
 }
 
+func TestVersionTagIsZero(t *testing.T) {
+	t.Parallel()
+
+	if !(wire.VersionTag{}).IsZero() {
+		t.Fatal("zero VersionTag was not zero")
+	}
+	if (wire.VersionTag{PartitionID: 1}).IsZero() {
+		t.Fatal("non-zero VersionTag was zero")
+	}
+}
+
+func TestRecordKindValidation(t *testing.T) {
+	t.Parallel()
+
+	if !wire.RecordValue.Valid() || !wire.RecordTombstone.Valid() {
+		t.Fatal("defined record kind was invalid")
+	}
+	if wire.RecordKind(2).Valid() {
+		t.Fatal("unknown record kind was valid")
+	}
+}
+
 func TestMutationIDLayout(t *testing.T) {
 	t.Parallel()
 

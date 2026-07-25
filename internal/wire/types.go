@@ -47,10 +47,30 @@ type VersionTag struct {
 	Sequence    uint64
 }
 
+// IsZero reports whether v carries no authoritative version.
+func (v VersionTag) IsZero() bool {
+	return v == VersionTag{}
+}
+
 // IsNewer reports whether v supersedes other. The caller is responsible for
 // checking that both tags belong to the same hub generation.
 func (v VersionTag) IsNewer(other VersionTag) bool {
 	return v.PartitionID == other.PartitionID && v.Sequence > other.Sequence
+}
+
+// RecordKind distinguishes live values from versioned deletion markers.
+type RecordKind uint8
+
+const (
+	// RecordValue contains a live cache value.
+	RecordValue RecordKind = iota
+	// RecordTombstone records an authoritative deletion.
+	RecordTombstone
+)
+
+// Valid reports whether k is a supported record kind.
+func (k RecordKind) Valid() bool {
+	return k == RecordValue || k == RecordTombstone
 }
 
 // MutationID is a node-minted mutation identity. Its first eight bytes encode

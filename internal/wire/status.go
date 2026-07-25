@@ -17,9 +17,46 @@ const (
 	StatusErrInternal              Status = 8
 )
 
+// StatusClass describes how a caller handles a data-plane status.
+type StatusClass uint8
+
+const (
+	// StatusClassSuccess completes the operation without retrying. Some success
+	// statuses, such as StatusErrWriteConfirmTimeout, may still map to a public
+	// API error while carrying a committed result.
+	StatusClassSuccess StatusClass = iota
+	// StatusClassRetryable leaves the operation eligible for retry.
+	StatusClassRetryable
+	// StatusClassTerminal fails the operation without retrying it.
+	StatusClassTerminal
+)
+
 // Valid reports whether s is a status defined by this protocol version.
 func (s Status) Valid() bool {
 	return s <= StatusErrInternal
+}
+
+// Class returns the frozen caller behavior for s. Unknown statuses fail closed
+// as terminal errors.
+func (s Status) Class() StatusClass {
+	switch s {
+	case StatusOK, StatusNotFound, StatusErrWriteConfirmTimeout:
+		return StatusClassSuccess
+	case StatusNotCaughtUp, StatusErrRateLimited:
+		return StatusClassRetryable
+	default:
+		return StatusClassTerminal
+	}
+}
+
+// Retryable reports whether a caller may retry the operation.
+func (s Status) Retryable() bool {
+	return s.Class() == StatusClassRetryable
+}
+
+// Terminal reports whether a caller must fail the operation without retrying.
+func (s Status) Terminal() bool {
+	return s.Class() == StatusClassTerminal
 }
 
 // String returns the stable protocol spelling of s.
