@@ -18,11 +18,11 @@ stream_sequence = contiguous delivery order for the partition stream
 
 ## Delivery rules
 
-- [ ] Hub assigns version and stream sequences; Node never renumbers them.
-- [ ] Hop ack means decoded receipt only; application ack means applied state.
+- [x] Hub assigns version and stream sequences; Node never renumbers them.
+- [x] Hop ack means decoded receipt only; application ack means applied state.
 - [ ] Reconnect exchanges subscribed partition watermarks.
 - [ ] Gap requests replay; expired replay requires held-key reconciliation.
-- [ ] Idle checkpoints carry stream head and `hub_generation`.
+- [x] Idle checkpoints carry stream head and `hub_generation`.
 - [ ] Backpressure is bounded per subscriber.
 - [ ] W confirmations deduplicate Node identity and exclude the writer.
 
@@ -46,7 +46,39 @@ offset  size  field
 `HopFrameAck=4`, `StreamAcknowledgement=5`, `StreamCheckpoint=6`,
 `ReplayRequest=7`, `ReplayUnavailable=8`, `InvalidateConfirm=9`. Unknown type or
 bad magic/crc => close the connection (fail-closed). Golden encodings for each
-live in `internal/control/testdata/`.
+live in `internal/control/testdata/`. The CRC protects only the header; payload
+integrity in transit is provided by the required mTLS transport.
+
+The executable codec is `internal/control.MarshalFrame` /
+`internal/control.UnmarshalFrame`; streaming callers use `ReadFrame` and
+`WriteFrame`. Decoding checks header limits before allocating the payload and
+checks collection counts before allocating message slices. `Hello` uses the
+oldest locally supported frame schema so peers can exchange version ranges;
+after negotiation, callers use the `*FrameVersion` encode/decode or streaming
+helpers with the selected version. Schema dispatch is explicit, so adding a
+protocol version without its codec fails closed.
+
+All payload integers are unsigned, big-endian, and fields appear in the order
+shown below. Counts and key lengths are `uint32`.
+
+| Message | Payload fields |
+|---------|----------------|
+| `Hello` | `node_id:u64`, `version:u16`, `min_supported:u16`, `watermark_count`, repeated (`stream_id:u32`, `applied_through:u64`, `hub_generation:u64`) |
+| `Subscribe` | `hub_generation:u64`, `stream_count`, repeated `stream_id:u32` |
+| `InvalidationBatch` | `stream_id:u32`, `hub_generation:u64`, `event_count`, repeated event fields below |
+| `HopFrameAck` | `stream_id:u32`, `received_through:u64` |
+| `StreamAcknowledgement` | `stream_id:u32`, `applied_through:u64` |
+| `StreamCheckpoint` | `stream_id:u32`, `hub_generation:u64`, `stream_head:u64` |
+| `ReplayRequest` | `stream_id:u32`, `from_sequence:u64`, `to_sequence:u64` (inclusive) |
+| `ReplayUnavailable` | `stream_id:u32`, `hub_generation:u64`, `requested_from:u64`, `oldest_available:u64`, `stream_head:u64` |
+| `InvalidateConfirm` | `stream_id:u32`, `stream_sequence:u64`, `node_id:u64` |
+
+An encoded invalidation event is `stream_sequence:u64`, `key_len:u32`, raw key,
+`version.partition_id:u32`, `version.sequence:u64`, `kind:u8`, and the raw
+16-byte `mutation_id`. A batch must be non-empty and contiguous, and every
+event version must belong to the batch stream. `ReplayUnavailable` reports the
+retained window so the consumer can distinguish an expired range without
+accepting a gap.
 
 ### Message payloads
 

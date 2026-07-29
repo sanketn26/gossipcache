@@ -3,7 +3,7 @@
 Single source of truth for **what is built**. Design docs describe the target;
 a feature is only real if it appears under **Implemented**.
 
-_Last updated: 2026-07-25_
+_Last updated: 2026-07-29_
 
 ## Target (v1)
 
@@ -20,7 +20,7 @@ files per phase under [impl/](impl/README.md).
 | VersionTag `(partition_id, sequence)` + `hub_generation` | Independent full-value gossip mode |
 | Tunable W (default 0), stale-serve, consistency readiness | Custom RUDP |
 
-## Implemented (common contracts — partial P0, P1 contract)
+## Implemented (common contracts — partial P0, P1 and P2 contracts)
 
 Useful building blocks; **not** a hybrid cluster yet.
 
@@ -29,6 +29,7 @@ Useful building blocks; **not** a hybrid cluster yet.
 | Shared wire contracts | `internal/wire` | Versions, mutation IDs, bounded requests, write/storage modes, statuses, protocol compatibility and byte-copy rules |
 | Partition routing | `internal/wire` | Seeded xxHash64 routing with shared golden vectors |
 | P1 Node/Hub seam | `internal/l1` | `HubClient`, validated Get response shapes, value/tombstone kinds and deterministic fake-hook contracts; no Node state machine or Hub fake yet |
+| P2 control protocol | `internal/control` | Fail-closed framed codec, all nine bounded message schemas, reconnect/replay/ack/checkpoint contracts, validation, byte-copy rules and golden vectors; no stream origin or consumer yet |
 
 ## Not started (by phase)
 
@@ -36,7 +37,7 @@ Useful building blocks; **not** a hybrid cluster yet.
 |------:|------|
 | P0 remainder | Public facade `New(cfg)`, in-memory L2 fake + basic L1↔backend path |
 | P1 | Hub fake implementation plus L1 state machine (EMPTY/FETCHING/VALID/STALE), singleflight and invalidation application |
-| P2 | Control plane frames/streams, interest, W confirms |
+| P2 | Hub stream origin and Node consumer: partition streams, interest, replay retention, checkpoint freshness and W aggregation (common framed protocol is implemented) |
 | P3 | Memory Hub store + RPC server; opt-in durability/recovery profile |
 | P4 | Health/readiness, held-key anti-entropy, K8s manifests, min metrics hooks |
 | P5 | Full observability suite |
