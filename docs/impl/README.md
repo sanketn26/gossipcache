@@ -69,8 +69,9 @@ known debt).
 |---------|-------|----------|
 | `pkg/gossipcache` | Node | Public `Client` facade, `WriteOptions`, sentinel errors |
 | `internal/l1` | Node | Slot state machine, singleflight, ceiling tracking, stale policy |
-| `internal/control` | both | Frame codec, stream consumer (Node) and stream origin (Hub) |
-| `internal/rpc` | both | Data-plane RPC transport, wire codec, status mapping |
+| `internal/frame` | both | Shared binary framing: encoder/decoder, CRC32C headers, stream I/O |
+| `internal/control` | both | Control-plane message schemas + stream frames; consumer (Node) and origin (Hub) |
+| `internal/rpc` | both | Data-plane RPC message schemas + request/response frames, status mapping |
 | `internal/l2` | Hub | Memory table, version assignment, partition router, changefeed |
 | `internal/l2/durable` | Hub | `DurabilityStore`, WAL, recovery, persistence queue |
 | `internal/wire` | both | Shared encoding, golden vectors, `VersionTag`, partition hash |
@@ -92,7 +93,7 @@ different concrete layout.
 
 | Owner | Planned units |
 |-------|---------------|
-| Common | `internal/wire/{types,partition,status}.go`, `internal/rpc/{frame,codec}.go`, `internal/control/{frame,messages}.go`, `internal/health/reason.go`, `internal/antientropy/messages.go` |
+| Common | `internal/wire/{types,record,partition,status}.go`, `internal/frame/{codec,header,io}.go`, `internal/rpc/{frame,codec,types}.go`, `internal/control/{frame,codec,types}.go`, `internal/health/reason.go`, `internal/antientropy/messages.go` |
 | Hub | `internal/l2/{partition,commit,table,expiry,dedup}.go`, `internal/l2/durable/{store,wal,recovery,queue}.go`, `cmd/l2/{main,config}.go` |
 | Node | `pkg/gossipcache/{client,options,errors}.go`, `internal/l1/{slot,machine,fetch,apply,lifecycle}.go`, `internal/rpc/client.go`, `internal/control/consumer.go` |
 | Tests/ops | `test/helpers/`, `test/integration/`, `test/chaos/`, `deployments/k8s/`, `deployments/observability/` |

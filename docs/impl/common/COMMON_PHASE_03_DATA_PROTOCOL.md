@@ -4,17 +4,21 @@
 
 ## RPC rules
 
-- [ ] Select and freeze RPC transport/schema.
-- [ ] Carry bounded keys/values, TTL, complete version, `hub_generation`, status
+- [x] Select and freeze RPC transport/schema.
+- [x] Carry bounded keys/values, TTL, complete version, `hub_generation`, status
   and mutation request ID.
-- [ ] Define retryable/terminal statuses and cancellation behavior.
-- [ ] Scope request deduplication by authenticated Node and retention window.
-- [ ] Preserve committed version in a W-timeout response.
-- [ ] Define `min_version` / `NOT_CAUGHT_UP` behavior.
-- [ ] Carry the active `memory` or `durable` Hub storage profile in handshake
+- [x] Define retryable/terminal statuses and cancellation behavior.
+- [x] Scope request deduplication by authenticated Node and retention window.
+- [x] Preserve committed version in a W-timeout response.
+- [x] Define `min_version` / `NOT_CAUGHT_UP` behavior.
+- [x] Carry the active `memory` or `durable` Hub storage profile in handshake
   and management status.
-- [ ] Carry `WriteFast` (default) or `WriteSync` on every mutation.
-- [ ] Define `ErrDurabilityUnavailable` and committed-result error details.
+- [x] Carry `WriteFast` (default) or `WriteSync` on every mutation.
+- [x] Define `ErrDurabilityUnavailable` and committed-result error details.
+
+Contract location: `internal/rpc` (types, frame codec, status helpers, dedup
+fingerprint). Hub retention tables, live waiters, RPC dial/server, and WAL are
+Hub/Node P3 runtime work.
 
 ## Profile rules
 
@@ -39,6 +43,9 @@ path as Delete.
 
 ### Transport and RPC surface (`internal/rpc`)
 
+- Shared mechanical framing lives in `internal/frame` (encoder/decoder, CRC32C
+  header seal, stream I/O). Control and RPC keep separate magics, header
+  layouts, and message schemas so ports fail closed on mixups.
 - Transport: length-prefixed request/response frames over the same mTLS TCP
   substrate as control (separate port `7400`), one in-flight table keyed by a
   4-byte `correlation_id`. gRPC is explicitly **not** used in v1 to keep the
@@ -142,16 +149,22 @@ rules** above.)
 ## Cross-component verification
 
 - [ ] Fake and real Hub pass the same Node client contract suite.
-- [ ] RPC and WAL golden vectors detect incompatible field, version and checksum
-  changes.
+- [x] RPC golden vectors detect incompatible field, version and checksum
+  changes (`internal/rpc/testdata/rpc_vectors.json`).
+- [ ] WAL golden vectors detect incompatible durable-record changes
+  (`internal/l2/durable/testdata/`, Hub P3).
 - [ ] Timeout/retry cannot duplicate a mutation.
 - [ ] A retry during or after W waiting observes the original waiter and final
-  W outcome; mismatched reuse of a `MutationID` fails terminally.
+  W outcome; mismatched reuse of a `MutationID` fails terminally
+  (fingerprint mismatch is frozen in `internal/rpc`; hub waiter join is Hub P3).
 - [ ] Sync fences earlier Fast writes and recovery has no sequence holes.
 - [ ] W and Fast/Sync combinations have independent result semantics.
 - [ ] Memory restart loses state safely through generation change.
 - [ ] Durable restart preserves Sync-acknowledged state; loss of a Fast tail
   forces a new generation and Node revalidation.
 
-**Exit:** transport and storage-profile changes preserve cache consistency while
-making restart durability explicit.
+**Common exit (codec):** transport schema, status classes, profile advertisement,
+and mutation fingerprint rules are frozen with golden vectors.
+
+**Full phase exit:** transport and storage-profile changes preserve cache
+consistency while making restart durability explicit (requires Hub/Node P3).

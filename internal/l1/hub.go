@@ -3,20 +3,19 @@ package l1
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"time"
 
 	"github.com/sanketn26/gossipcache/internal/wire"
 )
 
 var (
-	ErrInvalidGetStatus  = errors.New("invalid status for Get result")
-	ErrMissingVersion    = errors.New("successful record is missing a version")
-	ErrUnexpectedVersion = errors.New("result status must not carry a version")
-	ErrUnexpectedValue   = errors.New("result status must not carry a value")
-	ErrInvalidRecordKind = errors.New("invalid record kind")
-	ErrInvalidResultTTL  = errors.New("invalid result ttl")
+	// Shared get/record errors — aliases of wire so callers can use either package.
+	ErrInvalidGetStatus  = wire.ErrInvalidGetStatus
+	ErrMissingVersion    = wire.ErrMissingVersion
+	ErrUnexpectedVersion = wire.ErrUnexpectedVersion
+	ErrUnexpectedValue   = wire.ErrUnexpectedValue
+	ErrInvalidRecordKind = wire.ErrInvalidRecordKind
+	ErrInvalidResultTTL  = wire.ErrInvalidResultTTL
 )
 
 // WriteOptions is the shared write-policy contract.
@@ -60,31 +59,18 @@ func (r GetResult) Clone() GetResult {
 // Validate checks the frozen authoritative-read response semantics. Not-found,
 // not-caught-up, and error statuses never carry record data.
 func (r GetResult) Validate() error {
-	if !r.Status.Valid() || r.Status == wire.StatusErrWriteConfirmTimeout {
-		return fmt.Errorf("%w: %s", ErrInvalidGetStatus, r.Status)
-	}
 	if r.TTL < 0 {
 		return ErrInvalidResultTTL
 	}
-	if r.Status == wire.StatusOK {
-		if r.Version.IsZero() {
-			return ErrMissingVersion
-		}
-		if !r.Kind.Valid() {
-			return fmt.Errorf("%w: %d", ErrInvalidRecordKind, r.Kind)
-		}
-		if r.Kind == wire.RecordTombstone && len(r.Value) != 0 {
-			return ErrUnexpectedValue
-		}
-		return nil
+	if err := (wire.GetRecordFields{
+		Status:  r.Status,
+		Version: r.Version,
+		Kind:    r.Kind,
+		Value:   r.Value,
+	}).Validate(); err != nil {
+		return err
 	}
-	if !r.Version.IsZero() {
-		return ErrUnexpectedVersion
-	}
-	if len(r.Value) != 0 {
-		return ErrUnexpectedValue
-	}
-	if r.TTL != 0 {
+	if r.Status != wire.StatusOK && r.TTL != 0 {
 		return ErrInvalidResultTTL
 	}
 	return nil

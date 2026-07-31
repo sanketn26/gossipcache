@@ -40,6 +40,14 @@ func TestGetResultValidate(t *testing.T) {
 			wantErr: l1.ErrMissingVersion,
 		},
 		{
+			name: "OK rejects zero sequence",
+			result: l1.GetResult{
+				Version: wire.VersionTag{PartitionID: 2, Sequence: 0},
+				Kind:    l1.RecordValue, Status: wire.StatusOK,
+			},
+			wantErr: l1.ErrMissingVersion,
+		},
+		{
 			name: "not found rejects version",
 			result: l1.GetResult{
 				Version: version, Status: wire.StatusNotFound,

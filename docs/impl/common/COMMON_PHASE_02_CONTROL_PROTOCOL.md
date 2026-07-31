@@ -30,6 +30,10 @@ stream_sequence = contiguous delivery order for the partition stream
 
 ### Frame layout (`internal/control`)
 
+Shared mechanical framing (encoder/decoder, CRC32C seal, stream I/O) lives in
+`internal/frame`. This package owns the control magic, 16-byte header layout,
+and message schemas.
+
 Fixed 16-byte header, big-endian, followed by a bounded payload:
 
 ```text
