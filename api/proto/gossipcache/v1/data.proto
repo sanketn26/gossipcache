@@ -1,0 +1,114 @@
+syntax = "proto3";
+
+package gossipcache.v1;
+
+option go_package = "github.com/sanketn26/gossipcache/api/gen/gossipcache/v1;gossipcachev1";
+
+import "gossipcache/v1/common.proto";
+
+// Data is the authoritative L1 ↔ L2 value plane (unary RPCs over mTLS gRPC).
+//
+// Connect-time identity and generation are carried in HandshakeRequest.
+// Every subsequent Get/Mutate carries hub_generation so the Hub can reject a
+// stale generation **before** serving or committing (unary RPCs are not a
+// session; handshake alone does not bind later calls).
+service Data {
+  // Handshake negotiates API version and advertises hub identity/profile.
+  rpc Handshake(HandshakeRequest) returns (HandshakeResponse);
+
+  // HubStatus returns the active storage posture (management / readiness).
+  rpc HubStatus(HubStatusRequest) returns (HubStatusResponse);
+
+  // Get is an authoritative read. Miss/tombstone/not-caught-up use Status.
+  rpc Get(GetRequest) returns (GetResponse);
+
+  // Mutate performs Set or Delete under WriteFast/WriteSync and optional W.
+  rpc Mutate(MutationRequest) returns (MutationResponse);
+}
+
+message HandshakeRequest {
+  // Highest protocol version this node speaks.
+  uint32 protocol_version = 1;
+  // Oldest protocol version this node accepts.
+  uint32 min_supported_version = 2;
+  // Logical cluster identity; must match hub config and cert SAN cluster claim.
+  string cluster_id = 3;
+  // Node's expected hub generation. Zero means bootstrap (no trusted
+  // generation yet). Non-zero must equal the hub's current generation or the
+  // hub returns STATUS_ERR_BAD_GENERATION without adopting the node.
+  uint64 expected_hub_generation = 4;
+}
+
+message HandshakeResponse {
+  uint32 protocol_version = 1;
+  uint64 hub_generation = 2;
+  uint32 partition_count = 3;
+  StorageProfile storage_profile = 4;
+  // Meaningful only for STORAGE_PROFILE_DURABLE; gates WriteSync.
+  bool durable_healthy = 5;
+  // Echo of the accepted cluster_id.
+  string cluster_id = 6;
+}
+
+message HubStatusRequest {
+  // Required; hub rejects with STATUS_ERR_BAD_GENERATION on mismatch before
+  // returning status details that could be misapplied to the wrong generation.
+  uint64 hub_generation = 1;
+}
+
+message HubStatusResponse {
+  uint64 hub_generation = 1;
+  StorageProfile storage_profile = 2;
+  bool durable_healthy = 3;
+  Status status = 4; // OK or ERR_BAD_GENERATION / ERR_INVALID_ARGUMENT
+}
+
+message GetRequest {
+  bytes key = 1;
+  // When set, hub may return STATUS_NOT_CAUGHT_UP if head is below this tag.
+  optional VersionTag min_version = 2;
+  // Node's adopted hub generation. Hub compares for equality **before** lookup
+  // and returns STATUS_ERR_BAD_GENERATION without serving a value on mismatch.
+  uint64 hub_generation = 3;
+}
+
+message GetResponse {
+  Status status = 1;
+  uint64 hub_generation = 2;
+  VersionTag version = 3;
+  bytes value = 4;
+  uint64 ttl_millis = 5;
+  RecordKind kind = 6;
+}
+
+enum MutationOp {
+  MUTATION_OP_UNSPECIFIED = 0;
+  MUTATION_OP_SET = 1;
+  MUTATION_OP_DELETE = 2;
+}
+
+message MutationRequest {
+  MutationOp op = 1;
+  bytes key = 2;
+  // Required for SET; empty for DELETE.
+  bytes value = 3;
+  uint64 ttl_millis = 4;
+  MutationID mutation_id = 5;
+  WriteMode mode = 6;
+  // Peer invalidation confirms required before OK; 0 = async return.
+  uint32 w = 7;
+  ConfirmLevel confirm = 8;
+  // Milliseconds; meaningful when w > 0.
+  uint32 timeout_millis = 9;
+  // Node's adopted hub generation. Hub compares for equality **before** any
+  // commit or sequence assignment; mismatch returns STATUS_ERR_BAD_GENERATION
+  // and commits nothing.
+  uint64 hub_generation = 10;
+}
+
+message MutationResponse {
+  Status status = 1;
+  uint64 hub_generation = 2;
+  // Present on OK and STATUS_ERR_WRITE_CONFIRM_TIMEOUT (commit succeeded).
+  VersionTag version = 3;
+}

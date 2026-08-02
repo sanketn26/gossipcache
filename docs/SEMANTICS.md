@@ -27,7 +27,7 @@ Independent / Redis-as-SoT / UDP-gossip modes are **out of scope for v1**.
 | Plane | Carries | Path |
 |-------|---------|------|
 | Data | Values | Hit: L1 memory. Miss/write: L1 ↔ L2 RPC |
-| Control | Versioned invalidations only | Hub changefeed → interested L1s (mTLS TCP) |
+| Control | Versioned invalidations only | Hub changefeed → interested L1s (mTLS gRPC stream) |
 
 Values never ride the control plane.
 
@@ -218,8 +218,8 @@ Raising W is **optional and costly**. Use sparingly.
 
 | Mechanism | Meaning |
 |-----------|---------|
-| Transport | mTLS TCP; UDP not used for invalidations |
-| Hop ack | Bytes received — not enough to drop hub replay |
+| Transport | mTLS gRPC; UDP not used for invalidations |
+| Transport receipt | gRPC/HTTP2 flow control (no separate hop-ack message) |
 | Application ack / confirm | Applied to the direct subscriber's key state machine |
 | Gap | Replay from hub; expired → `RECONCILIATION_REQUIRED` + anti-entropy before ready |
 | `StreamCheckpoint` | Idle heartbeat; age > timeout → `STREAM_FRESHNESS_UNKNOWN` (unready) |
@@ -284,7 +284,7 @@ Primary ops profile: **Kubernetes**. MicroVM optional later.
 | 6 | W = 0 default; higher W = tunable peer confirms, costly |
 | 7 | Read-your-writes on writer via RPC response install |
 | 8 | In-flight and other pods may be stale until hub commit (+ stream) |
-| 9 | App ack ≠ hop ack; stream freshness required for ready |
+| 9 | App apply ack is authoritative; stream freshness required for ready |
 | 10 | Independent / Redis-SoT / UDP control plane out of v1 |
 
 Implementation contracts and work: [impl/README.md](impl/README.md).

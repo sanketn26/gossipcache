@@ -9,7 +9,8 @@ This file is a thin **Go-facing sketch** only—not a second source of product r
 
 - Go 1.21+
 - L1 library in-process; L2 hub process(es)
-- mTLS TCP for L2 RPC and invalidation streams
+- mTLS gRPC for L2 Data RPCs and Control invalidation streams
+- Schema: `api/proto/gossipcache/v1/` (generated Go under `api/gen/`)
 
 ## Core types
 
@@ -80,7 +81,8 @@ func (c *Client) Stop(ctx context.Context) error
 ## Internal Hub seam
 
 This consumer-owned interface belongs to `internal/l1`; it is not exported API.
-Control-stream consumption is a separate `internal/control` responsibility.
+Control-stream consumption uses the generated `Control` gRPC service; domain
+helpers live in `internal/control`.
 
 ```go
 type HubClient interface {
@@ -98,14 +100,14 @@ type HubClient interface {
 ```go
 type Config struct {
     NodeID              string
-    L2Addresses         []string
+    ClusterID           string        // required; sent on Handshake/Hello
+    L2Addresses         []string      // host:7400 (Data+Control, single port)
     StalePolicy         StalePolicy
     DefaultWriteW       uint16        // 0
     DefaultWriteMode    WriteMode     // WriteFast
     // Hub storage profile is advertised by the handshake, not selected by Node.
     StreamFreshnessTimeout time.Duration
-    TCPPortRPC          int           // e.g. 7400 toward hub
-    TCPPortControl      int           // e.g. 7401 streams
+    GRPCPort            int           // e.g. 7400 Data + Control (v1: single listener only)
     MgmtListen          string        // e.g. 127.0.0.1:8081
     MetricsListen       string        // e.g. :9090
     TLS                 TLSConfig

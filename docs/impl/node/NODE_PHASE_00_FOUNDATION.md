@@ -32,24 +32,24 @@ func (c *Client) Stop(ctx context.Context) error  // idempotent, joins goroutine
 
 The node depends on the `HubClient` interface (common P1); P0 wires the
 in-memory fake so the node never mints versions. The interface is injected
-through `Config` so P3 can swap in the real RPC client with no node-side change.
+through `Config` so P3 can swap in the real gRPC Data client with no node-side
+change.
 
 ```go
 type Config struct {
-    Hub              HubClient    // injected; fake in P0, RPC client in P3
+    Hub              HubClient    // injected; fake in P0, gRPC client in P3
     StalePolicy      StalePolicy
     DefaultWriteW    uint16       // 0; matches wire.WriteOptions.W
     DefaultWriteMode WriteMode    // WriteFast; matches wire.WriteOptions.Mode
-    // ... freshness timeout, listeners added in later phases
+    // ... freshness timeout, L2 addresses, gRPC dial options in later phases
 }
 ```
 
-### Reuse of existing storage
+### Local retention
 
-The current `internal/storage/memory` sharded map is reused behind the emerging
-`internal/l1` slot boundary for local retention; context propagation and
-`wire.CopyBytes` boundary copies are preserved. No global authority lives in the
-node.
+Local L1 retention lives behind the emerging `internal/l1` slot boundary;
+context propagation and `wire.CopyBytes` boundary copies are preserved. No
+global authority lives in the node.
 
 ## Verification
 

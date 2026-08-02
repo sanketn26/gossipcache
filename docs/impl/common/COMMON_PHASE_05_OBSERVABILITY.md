@@ -62,9 +62,10 @@ never label by key, value, `MutationID` or raw address.
 
 ### Trace correlation
 
-- One `trace_id` is minted at the Node public API call and propagated in the RPC
-  frame header and the resulting `InvalidationEvent`, so a write can be followed
-  from `Client.Set` → hub commit → stream publish → peer apply.
+- One `trace_id` is minted at the Node public API call and propagated via gRPC
+  metadata (and optionally as a field on the resulting invalidation event), so a
+  write can be followed from `Client.Set` → hub commit → stream publish → peer
+  apply.
 - Span names: `node.set`, `rpc.mutation`, `hub.commit`, `hub.publish`,
   `node.apply`. Durable hubs add `hub.persist` / `hub.sync_fence`.
 

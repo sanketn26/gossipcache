@@ -21,19 +21,17 @@ Build order: [docs/impl/README.md](docs/impl/README.md) (Common, Hub and Node fi
 
 ## Repository Map
 
-- `pkg/gossipcache/`: public client-facing API. Keep exported API changes deliberate and documented.
-- `pkg/gossipcache/inmemory/`: public constructor for local memory cache.
-- `internal/cache/`: local L1 coordination over storage (pre–state-machine).
-- `internal/storage/`: storage interfaces and errors.
-- `internal/storage/memory/`: in-memory storage, sharding, TTL expiration, and eviction policies.
-- `internal/config/`: configuration (L1 + L2 hub placeholders), loading, validation.
-- `internal/observability/`: logging and Prometheus metrics support.
-- `examples/server/`: local L1 example (`-tags example`).
-- `test/benchmark/`: benchmark tests.
+- `api/proto/gossipcache/v1/`: gRPC/protobuf schema (source of truth for on-wire).
+- `api/gen/gossipcache/v1/`: generated gRPC stubs (`make proto`).
+- `pkg/gossipcache/`: public client-facing API (planned / partial). Keep exported API changes deliberate and documented.
+- `internal/wire/`: shared domain types (versions, statuses, routing).
+- `internal/l1/`: node hub seam and (planned) local state machine.
+- `internal/rpc/`, `internal/control/`: domain validation and protobuf conversion above gRPC.
+- `internal/l2/`, `cmd/l2/`: hub runtime (planned).
 - `docs/`: architecture, deployment, diagrams, and implementation planning.
 
-Target packages (`internal/l1`, `internal/l2`, `internal/control`, `cmd/l2`, …)
-are planned in the phase files but not implemented yet. Verify the tree before editing.
+Verify the tree against [docs/STATUS.md](docs/STATUS.md) before editing; many
+planned packages are not present yet.
 
 ## Development Commands
 
@@ -48,6 +46,7 @@ make fmt         # go fmt ./...
 make vet         # go vet ./...
 make lint        # golangci-lint if installed
 make build       # build cmd/gossipcache into bin/
+make proto       # regenerate gRPC stubs from api/proto
 make all         # fmt, vet, lint, test, build
 ```
 

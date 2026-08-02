@@ -9,21 +9,22 @@ v1 deploys **app+L1** processes and a **native L2 hub**. Redis/UDP-as-control-pl
 
 ```text
 App ASG / Deployment (L1 library in each process)
-        │ RPC :7400          │ streams :7401
+        │ gRPC :7400  (Data unary + Control stream)
         └──────────► L2 hub (one logical process; partitions internal; not multi-replica HA)
 ```
 
 v1 is a single logical Hub process. It fails closed on Hub process/volume loss.
 Automatic multi-replica replication, leader fencing and failover are post-v1
 work — do not treat a PVC or multi-replica Deployment as v1 HA.
+
 | Port | Use |
 |-----:|-----|
-| 7400 | L2 data RPC (mTLS) |
-| 7401 | Invalidation streams / checkpoints (mTLS) |
+| 7400 | L2 gRPC — `Data` + `Control` on one mTLS listener |
 | 8081 | `/livez` `/startupz` `/readyz` (restricted) |
 | 9090 | Metrics |
 
-No UDP for backed mode.
+No UDP for backed mode. Wire encoding is protobuf over gRPC only. **v1 does not
+use a split control port**; both services share `:7400`.
 
 ## Kubernetes (primary)
 
@@ -48,13 +49,14 @@ Hub + two app containers; apps point `L2_ADDRESSES` at hub. No Redis.
 ## EC2
 
 - App ASG with L1; separate L2 instances; attach disks only for durable profile
-- SG: TCP 7400/7401 between app and hub
+- SG: TCP **7400** (gRPC) between app and hub
 - Discovery: tags or static hub list
 
 ## Config sketch
 
 ```bash
 GOSSIPCACHE_L2_ADDRESSES=l2:7400
+GOSSIPCACHE_CLUSTER_ID=prod-a
 GOSSIPCACHE_STREAM_FRESHNESS_TIMEOUT=3s
 GOSSIPCACHE_STALE_POLICY=never
 GOSSIPCACHE_DEFAULT_WRITE_W=0
@@ -67,8 +69,10 @@ GOSSIPCACHE_MGMT_LISTEN=127.0.0.1:8081
 
 | Symptom | Check |
 |---------|--------|
-| `STREAM_FRESHNESS_UNKNOWN` | Hub stream, :7401, checkpoint age and reconnect/replay |
+| `STREAM_FRESHNESS_UNKNOWN` | Hub Control stream on :7400, checkpoint age and reconnect/replay |
 | `RECONCILIATION_REQUIRED` | Replay window, anti-entropy |
+| `ERR_BAD_GENERATION` | Node expected generation vs hub; re-handshake with bootstrap |
+| `ERR_RATE_LIMITED` / `ResourceExhausted` | Data status vs ControlError vs connect budget |
 | Sync/W timeout | Peers ready; lower W or raise timeout; hub commit may already have succeeded |
 | Durable write latency | Disk sync latency, partition queue, group commit and compaction pressure |
 | Sync latency spike | Earlier Fast persistence backlog plus disk sync/group-commit latency |
@@ -79,4 +83,5 @@ GOSSIPCACHE_MGMT_LISTEN=127.0.0.1:8081
 
 ## Pre-hybrid history
 
-Older Redis-as-SoT + UDP gossip docs are non-normative. See git history if needed.
+Older Redis-as-SoT and UDP/memberlist deployment notes are obsolete for v1.
+See [STATUS.md](STATUS.md) removed list and historical ADRs under `docs/adr/`.

@@ -40,7 +40,7 @@ Implements the common P5 vocabulary from the authority side:
 ### Traces and events
 
 - Spans `hub.commit` → `hub.publish`, plus `hub.persist` / `hub.sync_fence` in
-  durable mode, correlated by the `trace_id` carried on the RPC frame.
+  durable mode, correlated by the `trace_id` carried on the gRPC request metadata.
 - Structured events (values excluded): `store_corruption`, `generation_change`,
   `durability_degraded`, `replay_unavailable`, each with `partition`,
   `hub_generation` and bounded sequence fields.

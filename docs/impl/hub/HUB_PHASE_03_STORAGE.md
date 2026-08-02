@@ -11,7 +11,7 @@
   stream sequence, dedup result and changefeed event.
 - [ ] Publish the mutation and invalidation atomically to Hub readers/streams.
 - [ ] Make TTL expiry a versioned mutation through the same partition path.
-- [ ] Implement multi-partition routing and the real RPC server.
+- [ ] Implement multi-partition routing and the real gRPC `Data` server.
 - [ ] On restart, start empty with a new `hub_generation` and require Node
   revalidation before readiness.
 
@@ -48,7 +48,7 @@ version, stream event and dedup result together:
 func (p *partition) commit(m Mutation) (commitResult, error) {
     p.mu.Lock(); defer p.mu.Unlock()
     if entry, ok := p.dedup.lookup(m.ID); ok {
-        return entry.committedResultFor(m) // validates fingerprint; W handled by RPC
+        return entry.committedResultFor(m) // validates fingerprint; W handled by Data.Mutate
     }
     seq := p.sequence + 1
     ver := wire.VersionTag{PartitionID: p.id, Sequence: seq}
@@ -67,9 +67,16 @@ func (p *partition) commit(m Mutation) (commitResult, error) {
 `WriteFast` returns after `stage` enqueues (or immediately in memory mode);
 `WriteSync` returns only after `stage` reports the fence durable. Version and
 stream sequence are consumed only on success, so a rejected Sync leaves no hole.
-The RPC layer attaches the committed dedup entry to one shared W waiter before
-publication; retries join that waiter or replay its final outcome rather than
-turning a previous W timeout into success.
+The gRPC Data layer attaches the committed dedup entry to one shared W waiter
+before publication; retries join that waiter or replay its final outcome rather
+than turning a previous W timeout into success.
+
+### gRPC Data server
+
+Register `gossipcachev1.DataServer` on the hub gRPC listener (shared with
+Control by default). Handlers convert protobuf ↔ domain via `internal/rpc`,
+call the partition commit path, and map application `Status` into response
+messages (not gRPC status codes for normal cache outcomes).
 
 ### DurabilityStore seam (`internal/l2/durable`)
 

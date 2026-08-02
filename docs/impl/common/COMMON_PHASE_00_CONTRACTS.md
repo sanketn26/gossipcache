@@ -76,9 +76,9 @@ type WriteOptions struct {
 
 `WriteFast` and `StorageMemory` are the zero values so an unset request is the
 default path. `ConfirmInvalidateApplied` is the only accepted v1 confirmation
-level; keeping it explicit prevents W from being confused with hop receipt or
+level; keeping it explicit prevents W from being confused with gRPC receipt or
 value visibility. `WriteOptions` is the single shared definition used by the
-public functional options, fake Hub seam and RPC request mapping.
+public functional options, fake Hub seam and gRPC Data request mapping.
 
 ### Partition routing
 
@@ -102,8 +102,9 @@ func PartitionOf(key []byte, partitionCount uint32) uint32
   `ERR_DURABILITY_UNAVAILABLE`, `ERR_BAD_GENERATION`, `ERR_RATE_LIMITED`,
   `ERR_INVALID_ARGUMENT`, `ERR_WRITE_CONFIRM_TIMEOUT`, `ERR_INTERNAL`.
   Retryable vs terminal classification is frozen in P3.
-- Protocol compatibility: `ProtocolVersion uint16` plus a min-supported field in
-  the handshake; mismatch fails closed.
+- Protocol compatibility: `ProtocolVersion` plus a min-supported field in the
+  gRPC `Handshake` request; mismatch fails closed. On-wire schema is protobuf
+  under `api/proto/gossipcache/v1/`.
 
 ### Byte ownership
 
@@ -114,7 +115,8 @@ Every boundary that retains or returns a caller/response slice copies it
 ## Cross-component verification
 
 - [ ] Hub fake and Node client compile against one contract.
-- [ ] Both sides pass the same routing and encoding vectors.
+- [ ] Both sides pass the same routing golden vectors.
+- [x] On-wire schema is protobuf/gRPC under `api/proto/gossipcache/v1/`.
 
 **Exit:** one Node performs Get/Set/Delete against the fake authoritative Hub
 without either side redefining shared types.

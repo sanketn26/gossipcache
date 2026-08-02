@@ -1,4 +1,4 @@
-.PHONY: help all build build-all run test test-short coverage coverage-report bench benchmark profile-cpu profile-mem profile-block profile-trace profile-all profile-clean lint fmt vet tidy update deps verify clean install install-lint install-tools docker-build docker-run watch version mod-graph list-deps check
+.PHONY: help all build build-all run test test-short coverage coverage-report bench benchmark profile-cpu profile-mem profile-block profile-trace profile-all profile-clean lint fmt vet tidy update deps verify clean install install-lint install-tools install-proto-tools proto docker-build docker-run watch version mod-graph list-deps check
 
 # Variables
 BINARY_NAME=gossipcache
@@ -195,8 +195,21 @@ install-lint:
 	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(shell go env GOPATH)/bin latest
 	@echo "$(GREEN)✓ golangci-lint installed$(NC)"
 
+## install-proto-tools: Install protoc Go plugins
+install-proto-tools:
+	@echo "$(CYAN)Installing protoc Go plugins...$(NC)"
+	@go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+	@go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+	@echo "$(GREEN)✓ protoc plugins installed (protoc itself must be on PATH)$(NC)"
+
+## proto: Regenerate gRPC stubs from api/proto
+proto:
+	@echo "$(CYAN)Generating protobuf/gRPC stubs...$(NC)"
+	@./scripts/generate-proto.sh
+	@echo "$(GREEN)✓ Proto generation complete$(NC)"
+
 ## install-tools: Install development tools
-install-tools: install-lint
+install-tools: install-lint install-proto-tools
 	@echo "$(CYAN)Installing development tools...$(NC)"
 	@go install golang.org/x/tools/cmd/goimports@latest
 	@go install github.com/swaggo/swag/cmd/swag@latest

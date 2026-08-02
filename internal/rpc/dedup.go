@@ -2,9 +2,14 @@ package rpc
 
 import (
 	"bytes"
+	"time"
 
 	"github.com/sanketn26/gossipcache/internal/wire"
 )
+
+// DefaultDedupWindow is how long a hub retains a per-node MutationID outcome
+// so retries join the original waiter or replay its result.
+const DefaultDedupWindow = 5 * time.Minute
 
 // DedupKey scopes a MutationID by the authenticated node identity so IDs
 // cannot collide across nodes. The hub retains outcomes for DefaultDedupWindow.

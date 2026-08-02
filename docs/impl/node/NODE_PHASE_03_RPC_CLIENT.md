@@ -1,4 +1,4 @@
-# Node P3 — Real hub RPC client
+# Node P3 — Real hub gRPC client
 
 **Depends on:** [NODE_PHASE_02_STREAM_CONSUMER.md](NODE_PHASE_02_STREAM_CONSUMER.md).
 
@@ -6,9 +6,9 @@
 
 ## Functional work
 
-- [ ] Implement bounded dial, request, retry and cancellation behavior.
+- [ ] Implement bounded dial, request, retry and cancellation against gRPC `Data`.
 - [ ] Carry one stable request ID across mutation retries.
-- [ ] Map wire statuses to public sentinel errors.
+- [ ] Map application statuses to public sentinel errors.
 - [ ] Preserve/install a committed version returned with `W` timeout.
 - [ ] Validate response partition and `hub_generation`.
 - [ ] Record the Hub storage profile from handshake/status without changing the
@@ -24,33 +24,37 @@
 ### Real client (`internal/rpc`, node side)
 
 Implements the same `HubClient` interface the fake satisfied, so swapping it in
-changes no node semantics.
+changes no node semantics. Uses generated `gossipcachev1.DataClient`.
 
 ```go
-type rpcClient struct {
-    pool     *connPool           // bounded mTLS conns to L2_ADDRESSES
-    inflight map[uint32]chan resp // correlation_id -> waiter
-    profile  atomic.Uint32       // StorageProfile from handshake
-    healthy  atomic.Bool         // DurableHealthy from handshake/status
+type grpcClient struct {
+    conn    *grpc.ClientConn
+    data    gossipcachev1.DataClient
+    profile atomic.Uint32 // StorageProfile from handshake
+    healthy atomic.Bool   // DurableHealthy from handshake/status
 }
 ```
 
+Unary RPCs carry the caller's `context` for deadlines/cancellation. There is no
+hand-rolled correlation-id map; gRPC owns request multiplexing.
+
 ### Request lifecycle
 
-- **Dial/retry:** bounded dial timeout; requests carry the caller `context` for
-  cancellation. Retryable statuses (`NOT_CAUGHT_UP`, `ERR_RATE_LIMITED`,
-  transport reset) retry with jittered backoff and a circuit breaker; terminal
-  statuses (`ERR_DURABILITY_UNAVAILABLE`, `ERR_BAD_GENERATION`) never retry.
+- **Dial/retry:** bounded dial timeout; retryable application statuses
+  (`NOT_CAUGHT_UP`, `ERR_RATE_LIMITED`) and transport reset retry with jittered
+  backoff and a circuit breaker; terminal statuses
+  (`ERR_DURABILITY_UNAVAILABLE`, `ERR_BAD_GENERATION`) never retry.
 - **Idempotent retries:** the same `MutationID` is reused across retries so the
   hub dedup cache collapses duplicates — a timeout+retry cannot double-apply.
-- **Status → sentinel mapping:** wire statuses map to public errors
+- **Status → sentinel mapping:** application statuses map to public errors
   (`NOT_CAUGHT_UP` → `ErrNotCaughtUp`, `ERR_DURABILITY_UNAVAILABLE` →
   `ErrDurabilityUnavailable`, `ERR_WRITE_CONFIRM_TIMEOUT` →
   `ErrWriteConfirmTimeout`, `ERR_BAD_GENERATION` → `ErrBadGeneration`). A W
   timeout response still carries the committed `VersionTag`, which the Node
-  installs before returning the error (the commit succeeded; only W lagged).
+  installs before returning the error.
 - **Validation:** every response's `PartitionID` and `hub_generation` are checked;
   a generation mismatch surfaces `ErrBadGeneration` and triggers revalidation.
+- **Conversion:** `internal/rpc` Proto* / FromProto* helpers at the boundary.
 
 ### Durability intent
 

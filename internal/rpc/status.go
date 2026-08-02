@@ -25,9 +25,9 @@ func StatusCarriesGetRecord(s wire.Status) bool {
 // eligible for retry with the same MutationID. Terminal and committed-success
 // statuses never retry the commit.
 //
-// Transport resets and connection loss are not wire statuses; the future RPC
-// client layer classifies those failures and reuses the MutationID on its own
-// retry path (same policy as StatusErrRateLimited).
+// Transport resets and connection loss are not wire statuses; the gRPC client
+// layer classifies those failures and reuses the MutationID on its own retry
+// path (same policy as StatusErrRateLimited).
 func RetrySameMutationID(s wire.Status) bool {
 	return s.Retryable()
 }

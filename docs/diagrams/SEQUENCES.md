@@ -7,8 +7,8 @@ Normative rules: [../SEMANTICS.md](../SEMANTICS.md).
 ```text
 App → L1 (state machine, singleflight)
         ├─ hit → local
-        ├─ miss/write → L2 hub RPC
-        └─ invalidation stream ← hub (subscribers of shard)
+        ├─ miss/write → L2 hub gRPC Data
+        └─ invalidation stream ← hub gRPC Control (subscribers of shard)
 ```
 
 ## Read hit

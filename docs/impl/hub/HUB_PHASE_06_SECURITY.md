@@ -6,22 +6,24 @@
 
 ## Functional work
 
-- [ ] Require workload identity/mTLS on data and control ports in production.
-- [ ] Validate protocol, cluster identity and `hub_generation` at connect.
+- [ ] Require workload identity/mTLS on the single gRPC listener in production.
+- [ ] Validate protocol, cluster identity and `hub_generation` at Handshake/Hello
+  and on every Get/Mutate (schema fields).
 - [ ] Authorize reads, mutations, subscriptions and management access.
-- [ ] Rate-limit RPC, reconnect, subscription and debug traffic.
+- [ ] Rate-limit Data (app status), Control (ControlError / ResourceExhausted).
 - [ ] Reload credentials without sequence or generation changes.
 
 ## Implementation detail
 
 ### Listener hardening
 
-- RPC (`7400`) and control (`7401`) wrap `tls.Config{MinVersion: VersionTLS13,
-  ClientAuth: RequireAndVerifyClientCert, ClientCAs: bundle}`. `GetConfigForClient`
-  reads the CA/cert from an `atomic.Pointer` so rotation is hitless.
-- After the TLS handshake the hub runs the common P6 validation order (SAN role +
-  `cluster_id` → protocol range → `hub_generation`) before accepting any Get,
-  mutation or Subscribe.
+- Single gRPC listener (`7400` for Data + Control) wraps
+  `tls.Config{MinVersion: VersionTLS13, ClientAuth:
+  RequireAndVerifyClientCert, ClientCAs: bundle}`. `GetConfigForClient` reads
+  the CA/cert from an `atomic.Pointer` so rotation is hitless.
+- After TLS, the hub validates SAN role + schema `cluster_id`, protocol range,
+  and generation (Handshake/Hello expected generation; Get/Mutate
+  `hub_generation` before any commit).
 
 ### Authorization map
 

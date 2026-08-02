@@ -11,7 +11,8 @@ the Hub owns runtime versions and invalidations. Restart durability is opt-in.
 - Memory-first L2 Hub as runtime authority (value + version + invalidation on every write)
 - Optional synchronous durability profile for restart recovery
 - Per-write `WriteFast` (memory acknowledgement) or `WriteSync` (durability fence)
-- Control plane: mTLS TCP invalidations (key + version); values via L2 RPC on miss
+- Control plane: mTLS **gRPC** invalidations (key + version); values via L2 Data RPC on miss
+- Wire schema: protobuf (`api/proto`); no custom binary frames
 - Partitioned streams; interest + held-key apply
 - Tunable write **W** (default 0 = async peers)
 - Stale-serve policies; consistency-aware readiness
@@ -20,9 +21,9 @@ the Hub owns runtime versions and invalidations. Restart durability is opt-in.
 
 ## Status
 
-**Common P0 contracts only** (identity, routing, bounded request models, status
-and compatibility types). The Hub, Node facade, streams, and multi-node demos
-are not implemented yet.
+**Common contracts partial P0–P3:** domain types, partition routing, gRPC/protobuf
+schema, control/data conversion helpers. The Hub runtime, Node facade, stream
+origin/consumer, and multi-node demos are not implemented yet.
 
 Honest inventory: **[docs/STATUS.md](docs/STATUS.md)**  
 Locked semantics: **[docs/SEMANTICS.md](docs/SEMANTICS.md)**
@@ -46,6 +47,7 @@ make test        # go test -v -race ./...
 make test-short
 make fmt
 make vet
+make proto       # regenerate gRPC stubs (requires protoc + plugins)
 ```
 
 ## License

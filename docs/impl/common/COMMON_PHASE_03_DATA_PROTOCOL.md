@@ -1,24 +1,54 @@
-# Common P3 — Data RPC and storage-profile contract
+# Common P3 — Data RPC (gRPC) and storage-profile contract
 
 **Depends on:** [COMMON_PHASE_02_CONTROL_PROTOCOL.md](COMMON_PHASE_02_CONTROL_PROTOCOL.md).
 
+## Transport and schema
+
+Data is the **gRPC** service `gossipcache.v1.Data` on port **7400** (shared with
+Control):
+
+| RPC | Role |
+|-----|------|
+| `Handshake` | Protocol negotiation; `cluster_id` + expected generation; hub advertisement |
+| `HubStatus` | Active storage posture (requires `hub_generation`) |
+| `Get` | Authoritative read (requires `hub_generation` **before** lookup) |
+| `Mutate` | Set/Delete (requires `hub_generation` **before** commit) |
+
+| Artifact | Location |
+|----------|----------|
+| IDL | [`api/proto/gossipcache/v1/data.proto`](../../../api/proto/gossipcache/v1/data.proto) (+ `common.proto`) |
+| Generated stubs | `api/gen/gossipcache/v1` |
+| Domain helpers | `internal/rpc` |
+
+Regenerate: `make proto`.
+
+Application-level result codes use the protobuf / `wire.Status` enum on
+responses. gRPC status codes are for transport, auth, and cancellation.
+
+### Generation and cluster (per call)
+
+Unary RPCs are not a session. After bootstrap Handshake adopts
+`hub_generation`, the Node **must** send that generation on every Get/Mutate
+and HubStatus. The Hub compares for equality **before** lookup or any commit /
+sequence assignment. Mismatch returns `STATUS_ERR_BAD_GENERATION` and
+**commits nothing**.
+
+`HandshakeRequest` / `Hello` carry `cluster_id` and `expected_hub_generation`
+(0 = bootstrap). See [COMMON_PHASE_06_SECURITY.md](COMMON_PHASE_06_SECURITY.md).
+
 ## RPC rules
 
-- [x] Select and freeze RPC transport/schema.
-- [x] Carry bounded keys/values, TTL, complete version, `hub_generation`, status
-  and mutation request ID.
+- [x] Freeze transport/schema as gRPC + protobuf.
+- [x] Carry `cluster_id` and expected generation on Handshake; `hub_generation`
+  on Get/Mutate/HubStatus.
+- [x] Carry bounded keys/values, TTL, complete version, status and mutation ID.
 - [x] Define retryable/terminal statuses and cancellation behavior.
 - [x] Scope request deduplication by authenticated Node and retention window.
 - [x] Preserve committed version in a W-timeout response.
 - [x] Define `min_version` / `NOT_CAUGHT_UP` behavior.
-- [x] Carry the active `memory` or `durable` Hub storage profile in handshake
-  and management status.
+- [x] Carry active `memory` or `durable` Hub storage profile in handshake/status.
 - [x] Carry `WriteFast` (default) or `WriteSync` on every mutation.
 - [x] Define `ErrDurabilityUnavailable` and committed-result error details.
-
-Contract location: `internal/rpc` (types, frame codec, status helpers, dedup
-fingerprint). Hub retention tables, live waiters, RPC dial/server, and WAL are
-Hub/Node P3 runtime work.
 
 ## Profile rules
 
@@ -29,90 +59,42 @@ path as Delete.
 - `memory` is default. Success means committed to Hub memory; restart loses
   state and creates a different `hub_generation`.
 - `durable` is opt-in and supports both acknowledgement modes.
-- `WriteFast` succeeds after atomic memory commit. Ordered persistence may run
-  asynchronously, but restart survival is not promised.
-- `WriteSync` requires healthy durable storage and succeeds only after this
-  mutation and all earlier partition mutations are synchronously persisted.
-- Unsupported/unhealthy Sync fails without committing the mutation.
-- A W-timeout never changes the profile commit result. In memory mode it does
-  not imply restart durability.
-- Nodes use the same API in both profiles and must not infer durability beyond
-  the advertised profile.
+- `WriteFast` succeeds after atomic memory commit.
+- `WriteSync` requires healthy durable storage and fences prior partition
+  mutations.
+- A W-timeout never changes the profile commit result.
+- Generation mismatch never commits.
 
 ## Implementation detail
 
-### Transport and RPC surface (`internal/rpc`)
-
-- Shared mechanical framing lives in `internal/frame` (encoder/decoder, CRC32C
-  header seal, stream I/O). Control and RPC keep separate magics, header
-  layouts, and message schemas so ports fail closed on mixups.
-- Transport: length-prefixed request/response frames over the same mTLS TCP
-  substrate as control (separate port `7400`), one in-flight table keyed by a
-  4-byte `correlation_id`. gRPC is explicitly **not** used in v1 to keep the
-  wire frozen and dependency-free.
-- Handshake advertises hub identity and durability posture:
+### Handshake and requests (domain shape)
 
 ```go
+type HandshakeRequest struct {
+    Protocol              wire.ProtocolRange
+    ClusterID             string
+    ExpectedHubGeneration uint64 // 0 = bootstrap
+}
 type Handshake struct {
-    ProtocolVersion uint16
+    ProtocolVersion wire.ProtocolVersion
     HubGeneration   uint64
     PartitionCount  uint32
-    StorageProfile  wire.StorageProfile // memory | durable, fixed for hub lifetime
-    DurableHealthy  bool                // durable profile only; gates WriteSync
+    StorageProfile  wire.StorageProfile
+    DurableHealthy  bool
+    ClusterID       string
 }
-```
-
-- Requests carry the full tag context and durability intent:
-
-```go
+type GetRequest struct {
+    Key           []byte
+    MinVersion    *wire.VersionTag
+    HubGeneration uint64 // required; checked before lookup
+}
 type MutationRequest struct {
-    Op         Op            // Set | Delete
-    Key, Value []byte
-    TTLMillis  uint64
-    MutationID wire.MutationID
-    Mode       wire.WriteMode // Fast (default) | Sync
-    W          uint16         // peer confirms; orthogonal to Mode
-    Confirm    wire.ConfirmLevel // InvalidateApplied is the only v1 value
-    Timeout    uint32         // ms, when W > 0
-}
-type MutationResponse struct {
-    Status        wire.Status
-    HubGeneration uint64
-    Version       wire.VersionTag // present even on ErrWriteConfirmTimeout
-}
-type GetRequest struct { Key []byte; MinVersion *wire.VersionTag }
-type GetResponse struct {
-    Status        wire.Status // OK | NOT_FOUND | NOT_CAUGHT_UP | error
-    HubGeneration uint64
-    Version       wire.VersionTag
-    Value         []byte
-    TTLMillis     uint64
-    Kind          wire.RecordKind
+    Op, Key, Value, TTLMillis, MutationID, Mode, W, Confirm, Timeout
+    HubGeneration uint64 // required; checked before commit
 }
 ```
 
-The Hub stamps every response with the generation under which it evaluated the
-request. The Node compares it with the adopted connection generation before
-using a value or installing a committed mutation. A mismatch fails closed and
-starts the Common P6 generation-change path.
-
-### Data-plane encoding and stored records
-
-RPC frames and durable records are deliberately separate encodings; the deleted
-legacy `0xC7` value envelope is not a v1 compatibility format.
-
-- The selected RPC schema encodes every request/response field above, uses a
-  length-prefixed frame with format version and CRC32C, and has golden vectors
-  under `internal/rpc/testdata/` for Get/Set/Delete, tombstone,
-  `NOT_CAUGHT_UP`, W timeout and every terminal status.
-- The durable WAL record is the checksummed layout owned by Hub P3. It includes
-  partition, version, stream sequence, record kind, key, value, expiry and
-  dedup/request metadata; recovery golden vectors live under
-  `internal/l2/durable/testdata/`.
-- Neither side persists or transmits an opaque implementation-specific Go
-  struct. Unknown format versions fail closed.
-
-### Status classification (frozen here)
+### Status classification
 
 | Status | Class | Meaning |
 |--------|-------|---------|
@@ -121,50 +103,28 @@ legacy `0xC7` value envelope is not a v1 compatibility format.
 | `NOT_CAUGHT_UP` | retryable | `min_version` above committed head |
 | `ERR_RATE_LIMITED`, transport reset | retryable | retry with same `MutationID` |
 | `ERR_DURABILITY_UNAVAILABLE` | terminal | Sync on memory/unhealthy hub; nothing committed |
-| `ERR_BAD_GENERATION` | terminal | reconnect/revalidate |
-| `ERR_INVALID_ARGUMENT` | terminal | malformed request or mismatched reuse of a `MutationID`; original mutation unchanged |
-| `ERR_WRITE_CONFIRM_TIMEOUT` | success+ | commit succeeded; W peers not confirmed in time; response carries committed version |
+| `ERR_BAD_GENERATION` | terminal | generation mismatch; nothing committed / no value served |
+| `ERR_INVALID_ARGUMENT` | terminal | malformed request or mismatched `MutationID` reuse |
+| `ERR_WRITE_CONFIRM_TIMEOUT` | success+ | commit succeeded; W peers not confirmed; carries version |
 
-The Node maps wire `ERR_WRITE_CONFIRM_TIMEOUT` to public
-`ErrWriteConfirmTimeout`. It installs the response's committed version before
-returning the error; the status is never treated as a retryable commit failure.
+### Deduplication
 
-### Deduplication and idempotency
-
-- The hub keeps a per-partition dedup entry keyed by `MutationID` for
-  `DedupWindow` (default 5 min). It records the immutable request fingerprint,
-  committed `VersionTag`, and the original W waiter/final outcome. A retry
-  within the window commits nothing new: while W is pending it joins the same
-  waiter; after completion it returns the same success or
-  `ERR_WRITE_CONFIRM_TIMEOUT` outcome.
-- Dedup entries are scoped by the authenticated Node identity so IDs cannot
-  collide across nodes.
-- A reused `MutationID` must carry the same operation, key/value/TTL, write mode,
-  W and confirmation policy. A mismatched retry is rejected as a terminal
-  invalid request and never changes the original mutation or waiter.
-
-(The profile/acknowledgement rules those requests obey are frozen in **Profile
-rules** above.)
+- Hub keeps a per-partition dedup entry keyed by `MutationID` for
+  `DedupWindow` (default 5 min).
+- Dedup is scoped by authenticated Node identity.
+- Generation is checked **before** dedup lookup/commit so a stale generation
+  cannot join a waiter or observe a prior commit under the wrong generation.
 
 ## Cross-component verification
 
 - [ ] Fake and real Hub pass the same Node client contract suite.
-- [x] RPC golden vectors detect incompatible field, version and checksum
-  changes (`internal/rpc/testdata/rpc_vectors.json`).
-- [ ] WAL golden vectors detect incompatible durable-record changes
-  (`internal/l2/durable/testdata/`, Hub P3).
+- [x] Domain validation and protobuf round-trips in `internal/rpc`.
+- [ ] Generation mismatch on Mutate commits nothing (unit + integration).
 - [ ] Timeout/retry cannot duplicate a mutation.
-- [ ] A retry during or after W waiting observes the original waiter and final
-  W outcome; mismatched reuse of a `MutationID` fails terminally
-  (fingerprint mismatch is frozen in `internal/rpc`; hub waiter join is Hub P3).
-- [ ] Sync fences earlier Fast writes and recovery has no sequence holes.
-- [ ] W and Fast/Sync combinations have independent result semantics.
 - [ ] Memory restart loses state safely through generation change.
-- [ ] Durable restart preserves Sync-acknowledged state; loss of a Fast tail
-  forces a new generation and Node revalidation.
 
-**Common exit (codec):** transport schema, status classes, profile advertisement,
-and mutation fingerprint rules are frozen with golden vectors.
+**Common exit (schema):** gRPC Data service, per-RPC generation, status classes,
+profile advertisement, and mutation fingerprint rules frozen via protobuf +
+domain helpers.
 
-**Full phase exit:** transport and storage-profile changes preserve cache
-consistency while making restart durability explicit (requires Hub/Node P3).
+**Full phase exit:** requires Hub/Node P3 runtime.

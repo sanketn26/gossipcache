@@ -1,0 +1,126 @@
+syntax = "proto3";
+
+package gossipcache.v1;
+
+option go_package = "github.com/sanketn26/gossipcache/api/gen/gossipcache/v1;gossipcachev1";
+
+import "gossipcache/v1/common.proto";
+
+// Control is the hub → node invalidation plane (bidirectional stream over mTLS gRPC).
+// Application apply acks and W confirms ride client→server messages.
+// Transport receipt is handled by gRPC/HTTP2 flow control (no hop-ack message).
+//
+// Encoded ControlServerMessage / ControlClientMessage sizes must stay within
+// MaxControlMessageBytes (3 MiB) so they fit the default 4 MiB gRPC message
+// limit with headroom. See internal/control constants.
+service Control {
+  rpc Connect(stream ControlClientMessage) returns (stream ControlServerMessage);
+}
+
+message ControlClientMessage {
+  oneof body {
+    Hello hello = 1;
+    Subscribe subscribe = 2;
+    StreamAcknowledgement stream_acknowledgement = 3;
+    ReplayRequest replay_request = 4;
+    InvalidateConfirm invalidate_confirm = 5;
+  }
+}
+
+message ControlServerMessage {
+  oneof body {
+    InvalidationBatch invalidation_batch = 1;
+    StreamCheckpoint stream_checkpoint = 2;
+    ReplayUnavailable replay_unavailable = 3;
+    // Application-level stream error (rate limit, bad generation, invalid arg).
+    // Does not replace gRPC transport codes for hard closes.
+    ControlError control_error = 4;
+  }
+}
+
+// ControlError carries application statuses on the control stream.
+// STATUS_ERR_RATE_LIMITED, STATUS_ERR_BAD_GENERATION, STATUS_ERR_INVALID_ARGUMENT,
+// and STATUS_ERR_INTERNAL are the only values hubs emit in v1.
+message ControlError {
+  Status status = 1;
+  // Optional short diagnostic; never keys, values, or credentials.
+  string detail = 2;
+}
+
+// StreamWatermark is a direct subscription resume point on reconnect.
+message StreamWatermark {
+  // partition_id under hub_generation
+  uint32 stream_id = 1;
+  uint64 applied_through = 2;
+  uint64 hub_generation = 3;
+}
+
+message Hello {
+  uint64 node_id = 1;
+  uint32 protocol_version = 2;
+  uint32 min_supported_version = 3;
+  repeated StreamWatermark subscriptions = 4;
+  // Logical cluster identity; must match hub config and cert SAN cluster claim.
+  string cluster_id = 5;
+  // Zero = bootstrap (adopt hub generation). Non-zero must equal hub generation
+  // or the hub sends ControlError(STATUS_ERR_BAD_GENERATION) and closes.
+  uint64 expected_hub_generation = 6;
+}
+
+message Subscribe {
+  uint64 hub_generation = 1;
+  repeated uint32 stream_ids = 2;
+}
+
+message InvalidationEvent {
+  // Contiguous hub-assigned delivery order for the partition stream.
+  uint64 stream_sequence = 1;
+  bytes key = 2;
+  VersionTag version = 3;
+  RecordKind kind = 4;
+  MutationID mutation_id = 5;
+}
+
+message InvalidationBatch {
+  uint32 stream_id = 1;
+  uint64 hub_generation = 2;
+  // Must be non-empty, contiguous by stream_sequence, and fit within
+  // MaxControlMessageBytes when encoded as a ControlServerMessage.
+  repeated InvalidationEvent events = 3;
+}
+
+// StreamAcknowledgement means the node state machine applied through sequence.
+message StreamAcknowledgement {
+  uint32 stream_id = 1;
+  uint64 applied_through = 2;
+}
+
+// StreamCheckpoint is an idle-stream liveness signal carrying the stream head.
+message StreamCheckpoint {
+  uint32 stream_id = 1;
+  uint64 hub_generation = 2;
+  uint64 stream_head = 3;
+}
+
+message ReplayRequest {
+  uint32 stream_id = 1;
+  uint64 from_sequence = 2;
+  uint64 to_sequence = 3;
+}
+
+// ReplayUnavailable reports the retained window after a failed replay request.
+// oldest_available is stream_head+1 when the retained window is empty.
+message ReplayUnavailable {
+  uint32 stream_id = 1;
+  uint64 hub_generation = 2;
+  uint64 requested_from = 3;
+  uint64 oldest_available = 4;
+  uint64 stream_head = 5;
+}
+
+// InvalidateConfirm is a peer apply confirmation for hub-aggregated W.
+message InvalidateConfirm {
+  uint32 stream_id = 1;
+  uint64 stream_sequence = 2;
+  uint64 node_id = 3;
+}

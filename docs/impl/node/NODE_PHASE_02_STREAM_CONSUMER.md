@@ -1,4 +1,4 @@
-# Node P2 — Hub stream consumer
+# Node P2 — Hub stream consumer (gRPC)
 
 **Depends on:** [NODE_PHASE_01_STATE_MACHINE.md](NODE_PHASE_01_STATE_MACHINE.md).
 
@@ -6,6 +6,7 @@
 
 ## Functional work
 
+- [ ] Dial gRPC `Control.Connect` with mTLS; send `Hello` and `Subscribe`.
 - [ ] Subscribe on first partition interest; never auto-unsubscribe in v1.
 - [ ] Apply ordered batches and maintain contiguous application watermarks.
 - [ ] Acknowledge only after state-machine application.
@@ -19,7 +20,8 @@
 
 ### Consumer structure (`internal/control`, node side)
 
-One owned goroutine per subscribed partition stream plus a shared decode loop.
+One owned apply path per subscribed partition plus a shared gRPC stream reader
+that demuxes server messages.
 
 ```go
 type streamConsumer struct {
@@ -30,6 +32,9 @@ type streamConsumer struct {
     gen         uint64        // hub_generation for this subscription
 }
 ```
+
+Protobuf conversion uses `internal/control` helpers; generated client stubs from
+`api/gen/gossipcache/v1`.
 
 ### Apply loop
 
@@ -47,9 +52,9 @@ on InvalidationBatch:
   send StreamAcknowledgement(appliedTo)
 ```
 
-- **Ack ordering:** `HopFrameAck` on decode is separate from the
-  `StreamAcknowledgement` sent only after state-machine apply — the hub frees
-  replay on the latter.
+- **Ack ordering:** gRPC flow control handles transport receipt;
+  `StreamAcknowledgement` is sent only after state-machine apply — the hub
+  frees connection-local buffers on the latter (not the shared replay window).
 - **Subscription lifecycle:** subscribe on first interest in a partition; v1
   never auto-unsubscribes, so interest only grows.
 - **Reconnect:** `Hello` replays `(partition, appliedTo, gen)`; the hub resumes

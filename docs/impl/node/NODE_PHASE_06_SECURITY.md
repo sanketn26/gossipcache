@@ -9,7 +9,7 @@
 - [ ] Authenticate the hub using workload identity/mTLS.
 - [ ] Validate protocol, cluster identity and `hub_generation`.
 - [ ] Reload credentials and reconnect streams without leaking goroutines.
-- [ ] Fail closed on incompatible or unauthenticated mutation/RPC paths.
+- [ ] Fail closed on incompatible or unauthenticated Data/Control paths.
 - [ ] Protect node management/debug endpoints.
 
 ## Implementation detail
@@ -33,7 +33,7 @@
 
 ### Fail-closed surfaces
 
-- Mutation/RPC on an incompatible or unauthenticated path returns terminal
+- Data/Control on an incompatible or unauthenticated path returns terminal
   errors and never downgrades transport (no plaintext fallback).
 - Node management/debug endpoints bind pod-local and require the admin role if
   exposed.

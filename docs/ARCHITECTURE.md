@@ -26,7 +26,7 @@ Independent full-value gossip is **out of scope for v1**.
 | | Carries | Path |
 |--|---------|------|
 | Data | Values | L1 hit, or L2 RPC |
-| Control | Invalidations | Hub → interested L1s (mTLS TCP) |
+| Control | Invalidations | Hub → interested L1s (mTLS gRPC stream) |
 
 ## Paths (summary)
 
@@ -59,7 +59,7 @@ controls how many Nodes confirm invalidation application.
 ## Ops sketch
 
 - **K8s primary:** app Deployment (L1 linked in), L2 StatefulSet + PVC, consistency-aware `/readyz`
-- **Ports (placeholders):** 7400 L2 RPC, 7401 streams, 8081 probes, 9090 metrics
+- **Ports (placeholders):** 7400 L2 gRPC (Data + Control, single listener), 8081 probes, 9090 metrics
 - **Detail:** [DEPLOYMENT.md](DEPLOYMENT.md)
 
 ## Observability

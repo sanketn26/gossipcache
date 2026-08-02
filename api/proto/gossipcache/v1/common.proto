@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package gossipcache.v1;
+
+option go_package = "github.com/sanketn26/gossipcache/api/gen/gossipcache/v1;gossipcachev1";
+
+// VersionTag is the authoritative per-key version within one hub generation.
+// Ordered only when partition_id and hub_generation match.
+message VersionTag {
+  uint32 partition_id = 1;
+  uint64 sequence = 2;
+}
+
+// Status is the closed set of data-plane result codes (SEMANTICS / Common P0).
+// Numeric values match internal/wire.Status for stable mapping.
+enum Status {
+  STATUS_OK = 0;
+  STATUS_NOT_FOUND = 1;
+  STATUS_NOT_CAUGHT_UP = 2;
+  STATUS_ERR_DURABILITY_UNAVAILABLE = 3;
+  STATUS_ERR_BAD_GENERATION = 4;
+  STATUS_ERR_RATE_LIMITED = 5;
+  STATUS_ERR_INVALID_ARGUMENT = 6;
+  STATUS_ERR_WRITE_CONFIRM_TIMEOUT = 7;
+  STATUS_ERR_INTERNAL = 8;
+}
+
+// RecordKind distinguishes live values from versioned deletion markers.
+enum RecordKind {
+  RECORD_KIND_VALUE = 0;
+  RECORD_KIND_TOMBSTONE = 1;
+}
+
+// WriteMode selects the hub durability acknowledgement for a mutation.
+// Independent of peer-confirmation W.
+enum WriteMode {
+  WRITE_MODE_FAST = 0;
+  WRITE_MODE_SYNC = 1;
+}
+
+// StorageProfile is fixed for a hub process lifetime and advertised at handshake.
+enum StorageProfile {
+  STORAGE_PROFILE_MEMORY = 0;
+  STORAGE_PROFILE_DURABLE = 1;
+}
+
+// ConfirmLevel specifies what peer confirmation means for W > 0.
+enum ConfirmLevel {
+  CONFIRM_LEVEL_INVALIDATE_APPLIED = 0;
+}
+
+// MutationID is a 16-byte node-minted identity: 8-byte epoch + 8-byte counter.
+// Must be exactly 16 bytes when set.
+message MutationID {
+  bytes id = 1;
+}

@@ -10,8 +10,8 @@ that the node can mint versions.
 ## Functional work
 
 - [ ] Define hub-only config: storage profile (`memory` default), optional data
-  path for durable mode, partition count, generation and RPC, control and
-  management listeners.
+  path for durable mode, partition count, generation, gRPC and management
+  listeners.
 - [ ] Implement an in-memory hub fake behind the shared hub API.
 - [ ] Route keys with shared golden partition vectors.
 - [ ] Assign authoritative per-partition versions for Set/Delete.
@@ -21,7 +21,7 @@ that the node can mint versions.
 
 ### Packages
 
-- `cmd/l2`: binary entrypoint, flag/env config, listener wiring, lifecycle.
+- `cmd/l2`: binary entrypoint, flag/env config, gRPC server wiring, lifecycle.
 - `internal/l2`: authority core — partition router, per-partition memory table,
   version assignment. In P0 this is a fake exposed behind the shared hub API.
 
@@ -33,14 +33,18 @@ type HubConfig struct {
     DataDir        string              // required iff durable
     PartitionCount uint32              // fixed for a generation; default 16
     HubGeneration  uint64              // minted at start (memory) or recovered (durable)
-    RPCListen      string              // :7400
-    ControlListen  string              // :7401
+    ClusterID      string              // required; validated on Handshake/Hello
+    GRPCListen     string              // :7400 Data + Control (single listener)
     MgmtListen     string              // 127.0.0.1:8081
 }
 ```
 
 Validation: `durable` without a usable `DataDir` is a startup error; `memory`
 mints a fresh `HubGeneration` (monotonic clock nanos + random) every start.
+
+P0 does not require a real gRPC server; the in-process fake implements
+`internal/l1.HubClient` for Node development. Real `Data` / `Control` services
+land in Hub P2/P3.
 
 ### Version authority
 

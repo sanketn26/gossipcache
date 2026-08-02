@@ -1,47 +1,50 @@
-// Package control defines the versioned control-stream protocol shared by
-// GossipCache hubs and nodes.
+// Package control holds control-plane stream semantics above the gRPC Control
+// service. Framing is protobuf (api/proto/gossipcache/v1); this package owns
+// delivery-rule validation, defaults, and wire↔proto conversion.
 package control
 
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/sanketn26/gossipcache/internal/wire"
 )
 
 const (
-	// HeaderSize is the fixed encoded frame-header size.
-	HeaderSize = 16
-	// MaxControlPayload bounds one control frame payload.
-	MaxControlPayload = 1 << 20
 	// MaxBatchEvents prevents tiny event encodings from creating unbounded
-	// allocation pressure during decode.
+	// allocation pressure during decode/apply. Encoded size is the binding
+	// limit; this is a secondary cap.
 	MaxBatchEvents = 4096
+	// MaxControlMessageBytes is the maximum encoded size of any single
+	// ControlClientMessage or ControlServerMessage (including
+	// InvalidationBatch). It is frozen at 3 MiB so messages fit inside the
+	// default gRPC 4 MiB send/receive limit with headroom for framing.
+	// Hub and Node gRPC servers/clients MUST set MaxSendMsgSize and
+	// MaxRecvMsgSize to at least this value (defaults already are 4 MiB).
+	MaxControlMessageBytes = 3 << 20
+	// controlMessageOverhead is a conservative protobuf encoding budget for
+	// envelope tags and batch fixed fields (not including per-event bodies).
+	controlMessageOverhead = 128
+	// eventEncodedOverhead is a conservative per-event protobuf budget excluding
+	// the key bytes (stream_sequence, version, kind, mutation_id, field tags).
+	eventEncodedOverhead = 64
 	// MaxSubscriptions bounds the partitions advertised by one connection.
 	MaxSubscriptions = 4096
 	// DefaultSubscriberQueue is the default per-subscriber event capacity.
 	DefaultSubscriberQueue = 4096
-)
-
-const (
 	// DefaultCheckpointInterval is the maximum default idle period between
 	// authoritative stream checkpoints.
 	DefaultCheckpointInterval = time.Second
 	// DefaultStreamFreshnessTimeout gates readiness after three missed default
 	// checkpoint intervals.
 	DefaultStreamFreshnessTimeout = 3 * time.Second
+	// MaxControlErrorDetail is the largest ControlError.detail string.
+	MaxControlErrorDetail = 256
 )
 
 var (
-	ErrBadMagic               = errors.New("invalid control frame magic")
-	ErrBadHeaderCRC           = errors.New("invalid control frame header checksum")
-	ErrUnsupportedVersion     = errors.New("unsupported control protocol version")
-	ErrUnknownMessageType     = errors.New("unknown control message type")
-	ErrPayloadTooLarge        = errors.New("control payload exceeds maximum length")
-	ErrTruncatedFrame         = errors.New("truncated control frame")
-	ErrTrailingPayload        = errors.New("control payload has trailing bytes")
-	ErrInvalidMessage         = errors.New("invalid control message")
 	ErrInvalidHubGeneration   = errors.New("hub generation must not be zero")
 	ErrInvalidNodeID          = errors.New("node ID must not be zero")
 	ErrInvalidSequence        = errors.New("stream sequence must not be zero")
@@ -50,50 +53,16 @@ var (
 	ErrPartitionMismatch      = errors.New("event version partition does not match stream")
 	ErrInvalidRecordKind      = errors.New("invalid invalidation record kind")
 	ErrTooManyEvents          = errors.New("invalidation batch exceeds event limit")
+	ErrBatchTooLarge          = errors.New("invalidation batch exceeds encoded size limit")
 	ErrTooManySubscriptions   = errors.New("subscription count exceeds limit")
 	ErrDuplicateSubscription  = errors.New("duplicate stream subscription")
 	ErrEmptySubscriptions     = errors.New("subscription list must not be empty")
 	ErrEmptyInvalidationBatch = errors.New("invalidation batch must not be empty")
+	ErrInvalidMessage         = errors.New("invalid control message")
+	ErrInvalidClusterID       = errors.New("cluster id must not be empty")
+	ErrInvalidControlStatus   = errors.New("invalid control error status")
+	ErrControlDetailTooLarge  = errors.New("control error detail exceeds limit")
 )
-
-// MessageType is the closed set of control-frame payload schemas.
-type MessageType uint16
-
-const (
-	MessageHello                 MessageType = 1
-	MessageSubscribe             MessageType = 2
-	MessageInvalidationBatch     MessageType = 3
-	MessageHopFrameAck           MessageType = 4
-	MessageStreamAcknowledgement MessageType = 5
-	MessageStreamCheckpoint      MessageType = 6
-	MessageReplayRequest         MessageType = 7
-	MessageReplayUnavailable     MessageType = 8
-	MessageInvalidateConfirm     MessageType = 9
-)
-
-// Valid reports whether t has a schema in this protocol version.
-func (t MessageType) Valid() bool {
-	switch t {
-	case MessageHello,
-		MessageSubscribe,
-		MessageInvalidationBatch,
-		MessageHopFrameAck,
-		MessageStreamAcknowledgement,
-		MessageStreamCheckpoint,
-		MessageReplayRequest,
-		MessageReplayUnavailable,
-		MessageInvalidateConfirm:
-		return true
-	default:
-		return false
-	}
-}
-
-// Message is implemented by every control payload.
-type Message interface {
-	Type() MessageType
-	Validate() error
-}
 
 // StreamWatermark describes a directly subscribed partition when reconnecting.
 type StreamWatermark struct {
@@ -104,13 +73,14 @@ type StreamWatermark struct {
 
 // Hello identifies a node, advertises its supported protocol range, and
 // carries the application watermarks needed to resume direct subscriptions.
+// ExpectedHubGeneration zero means bootstrap (adopt the hub generation).
 type Hello struct {
-	NodeID        uint64
-	Protocol      wire.ProtocolRange
-	Subscriptions []StreamWatermark
+	NodeID                uint64
+	Protocol              wire.ProtocolRange
+	Subscriptions         []StreamWatermark
+	ClusterID             string
+	ExpectedHubGeneration uint64
 }
-
-func (Hello) Type() MessageType { return MessageHello }
 
 // Validate checks the hello payload.
 func (m Hello) Validate() error {
@@ -119,6 +89,9 @@ func (m Hello) Validate() error {
 	}
 	if err := m.Protocol.Validate(); err != nil {
 		return err
+	}
+	if strings.TrimSpace(m.ClusterID) == "" {
+		return ErrInvalidClusterID
 	}
 	if len(m.Subscriptions) > MaxSubscriptions {
 		return ErrTooManySubscriptions
@@ -147,8 +120,6 @@ type Subscribe struct {
 	HubGeneration uint64
 	StreamIDs     []uint32
 }
-
-func (Subscribe) Type() MessageType { return MessageSubscribe }
 
 // Validate checks the subscribe payload.
 func (m Subscribe) Validate() error {
@@ -184,9 +155,7 @@ type InvalidationBatch struct {
 	Events        []InvalidationEvent
 }
 
-func (InvalidationBatch) Type() MessageType { return MessageInvalidationBatch }
-
-// Validate checks batch bounds, ordering, and partition ownership.
+// Validate checks batch bounds, ordering, partition ownership, and encoded size.
 func (m InvalidationBatch) Validate() error {
 	if m.HubGeneration == 0 {
 		return ErrInvalidHubGeneration
@@ -198,21 +167,30 @@ func (m InvalidationBatch) Validate() error {
 		return ErrTooManyEvents
 	}
 	var previous uint64
-	encodedSize := 16 // stream ID, hub generation, and event count
 	for i, event := range m.Events {
 		if err := event.validate(m.StreamID); err != nil {
 			return fmt.Errorf("event %d: %w", i, err)
-		}
-		encodedSize += 41 + len(event.Key)
-		if encodedSize > MaxControlPayload {
-			return ErrPayloadTooLarge
 		}
 		if i > 0 && event.StreamSequence != previous+1 {
 			return fmt.Errorf("%w: previous=%d current=%d", ErrNonContiguousBatch, previous, event.StreamSequence)
 		}
 		previous = event.StreamSequence
 	}
+	if m.EstimatedEncodedSize() > MaxControlMessageBytes {
+		return fmt.Errorf("%w: estimated %d bytes, max %d", ErrBatchTooLarge, m.EstimatedEncodedSize(), MaxControlMessageBytes)
+	}
 	return nil
+}
+
+// EstimatedEncodedSize returns a conservative upper bound on the protobuf
+// encoding size of this batch wrapped as a ControlServerMessage. Hubs must
+// split publish batches so each message stays within MaxControlMessageBytes.
+func (m InvalidationBatch) EstimatedEncodedSize() int {
+	n := controlMessageOverhead
+	for _, event := range m.Events {
+		n += eventEncodedOverhead + len(event.Key)
+	}
+	return n
 }
 
 // Clone returns an ownership-independent invalidation batch.
@@ -255,28 +233,14 @@ func (e InvalidationEvent) validate(streamID uint32) error {
 	return nil
 }
 
-// HopFrameAck confirms decoded transport receipt through a stream sequence. It
-// does not mean that the node state machine applied the invalidation.
-type HopFrameAck struct {
-	StreamID        uint32
-	ReceivedThrough uint64
-}
-
-func (HopFrameAck) Type() MessageType { return MessageHopFrameAck }
-func (m HopFrameAck) Validate() error {
-	if m.ReceivedThrough == 0 {
-		return ErrInvalidSequence
-	}
-	return nil
-}
-
 // StreamAcknowledgement confirms state-machine application through a sequence.
+// Transport receipt is gRPC flow control; only application apply is ack'd here.
 type StreamAcknowledgement struct {
 	StreamID       uint32
 	AppliedThrough uint64
 }
 
-func (StreamAcknowledgement) Type() MessageType { return MessageStreamAcknowledgement }
+// Validate checks the acknowledgement.
 func (m StreamAcknowledgement) Validate() error {
 	if m.AppliedThrough == 0 {
 		return ErrInvalidSequence
@@ -291,7 +255,7 @@ type StreamCheckpoint struct {
 	StreamHead    uint64
 }
 
-func (StreamCheckpoint) Type() MessageType { return MessageStreamCheckpoint }
+// Validate checks the checkpoint.
 func (m StreamCheckpoint) Validate() error {
 	if m.HubGeneration == 0 {
 		return ErrInvalidHubGeneration
@@ -306,7 +270,7 @@ type ReplayRequest struct {
 	ToSequence   uint64
 }
 
-func (ReplayRequest) Type() MessageType { return MessageReplayRequest }
+// Validate checks the replay range.
 func (m ReplayRequest) Validate() error {
 	if m.FromSequence == 0 || m.ToSequence < m.FromSequence {
 		return ErrInvalidSequenceRange
@@ -324,7 +288,7 @@ type ReplayUnavailable struct {
 	StreamHead      uint64
 }
 
-func (ReplayUnavailable) Type() MessageType { return MessageReplayUnavailable }
+// Validate checks the unavailable report.
 func (m ReplayUnavailable) Validate() error {
 	if m.HubGeneration == 0 {
 		return ErrInvalidHubGeneration
@@ -348,13 +312,38 @@ type InvalidateConfirm struct {
 	NodeID         uint64
 }
 
-func (InvalidateConfirm) Type() MessageType { return MessageInvalidateConfirm }
+// Validate checks the confirm message.
 func (m InvalidateConfirm) Validate() error {
 	if m.StreamSequence == 0 {
 		return ErrInvalidSequence
 	}
 	if m.NodeID == 0 {
 		return ErrInvalidNodeID
+	}
+	return nil
+}
+
+// ControlError is an application-level error on the control stream.
+// Allowed statuses in v1: ERR_RATE_LIMITED, ERR_BAD_GENERATION,
+// ERR_INVALID_ARGUMENT, ERR_INTERNAL.
+type ControlError struct {
+	Status wire.Status
+	Detail string
+}
+
+// Validate checks the control error payload.
+func (m ControlError) Validate() error {
+	switch m.Status {
+	case wire.StatusErrRateLimited,
+		wire.StatusErrBadGeneration,
+		wire.StatusErrInvalidArgument,
+		wire.StatusErrInternal:
+		// ok
+	default:
+		return fmt.Errorf("%w: %s", ErrInvalidControlStatus, m.Status)
+	}
+	if len(m.Detail) > MaxControlErrorDetail {
+		return ErrControlDetailTooLarge
 	}
 	return nil
 }

@@ -1,52 +1,15 @@
-// Package rpc defines the versioned data-plane RPC protocol shared by
-// GossipCache hubs and nodes.
-//
-// Transport is length-prefixed request/response frames over mTLS TCP (default
-// port DefaultRPCPort). Frames are multiplexed with a 4-byte correlation ID.
-// gRPC is intentionally not used in v1 so the wire stays frozen and
-// dependency-free.
 package rpc
 
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/sanketn26/gossipcache/internal/wire"
 )
 
-const (
-	// HeaderSize is the fixed encoded frame-header size, including the
-	// correlation ID and header CRC32C.
-	HeaderSize = 20
-	// mutationPayloadOverhead is the fixed encoding size of a MutationRequest
-	// excluding the key and value bodies:
-	// op(1) + keyLen(4) + valueLen(4) + ttl(8) + mutationID(16) + mode(1) +
-	// w(2) + confirm(1) + timeout(4).
-	mutationPayloadOverhead = 41
-	// MaxRPCPayload is the v1 schema-derived payload ceiling: large enough for
-	// a maximum-sized MutationRequest (max key + max value + fixed fields).
-	// MaxValueLen alone is not enough because payloads also carry key,
-	// version/policy metadata, and length prefixes. Recompute this constant
-	// when adding or resizing RPC message fields so max legal values remain
-	// encodable.
-	MaxRPCPayload = wire.MaxValueLen + wire.MaxKeyLen + mutationPayloadOverhead
-	// DefaultRPCPort is the conventional hub data-plane listen port.
-	DefaultRPCPort = 7400
-	// DefaultDedupWindow is how long a hub retains a per-node MutationID
-	// outcome so retries join the original waiter or replay its result.
-	DefaultDedupWindow = 5 * time.Minute
-)
-
 var (
-	ErrBadMagic                    = errors.New("invalid rpc frame magic")
-	ErrBadHeaderCRC                = errors.New("invalid rpc frame header checksum")
-	ErrUnsupportedVersion          = errors.New("unsupported rpc protocol version")
-	ErrUnknownMessageType          = errors.New("unknown rpc message type")
-	ErrPayloadTooLarge             = errors.New("rpc payload exceeds maximum length")
-	ErrTruncatedFrame              = errors.New("truncated rpc frame")
-	ErrTrailingPayload             = errors.New("rpc payload has trailing bytes")
-	ErrInvalidMessage              = errors.New("invalid rpc message")
 	ErrInvalidHubGeneration        = errors.New("hub generation must not be zero")
 	ErrInvalidDurableHealth        = errors.New("memory profile cannot advertise durable health")
 	ErrInvalidOp                   = errors.New("invalid mutation operation")
@@ -54,6 +17,9 @@ var (
 	ErrInvalidMutationStatus       = errors.New("invalid status for mutation response")
 	ErrInvalidNodeID               = errors.New("node ID must not be zero")
 	ErrMutationFingerprintMismatch = errors.New("mutation fingerprint does not match retained request")
+	ErrInvalidStatus               = errors.New("invalid status")
+	ErrInvalidEnum                 = errors.New("invalid protobuf enum value")
+	ErrInvalidClusterID            = errors.New("cluster id must not be empty")
 
 	// Shared get/record errors — aliases of wire so callers can use either package.
 	ErrUnexpectedValue   = wire.ErrUnexpectedValue
@@ -64,42 +30,7 @@ var (
 	ErrInvalidResultTTL  = wire.ErrInvalidResultTTL
 )
 
-// MessageType is the closed set of data-plane payload schemas.
-type MessageType uint16
-
-const (
-	MessageHandshakeRequest MessageType = 1
-	MessageHandshake        MessageType = 2
-	MessageHubStatus        MessageType = 3
-	MessageGetRequest       MessageType = 4
-	MessageGetResponse      MessageType = 5
-	MessageMutationRequest  MessageType = 6
-	MessageMutationResponse MessageType = 7
-)
-
-// Valid reports whether t has a schema in this protocol version.
-func (t MessageType) Valid() bool {
-	switch t {
-	case MessageHandshakeRequest,
-		MessageHandshake,
-		MessageHubStatus,
-		MessageGetRequest,
-		MessageGetResponse,
-		MessageMutationRequest,
-		MessageMutationResponse:
-		return true
-	default:
-		return false
-	}
-}
-
-// Message is implemented by every RPC payload.
-type Message interface {
-	Type() MessageType
-	Validate() error
-}
-
-// Op is a mutation operation carried on MutationRequest.
+// Op is a mutation operation.
 type Op uint8
 
 const (
@@ -115,15 +46,19 @@ func (o Op) Valid() bool {
 }
 
 // HandshakeRequest is sent by a node to begin the data-plane session.
+// ExpectedHubGeneration zero means bootstrap (no trusted generation yet).
 type HandshakeRequest struct {
-	Protocol wire.ProtocolRange
+	Protocol              wire.ProtocolRange
+	ClusterID             string
+	ExpectedHubGeneration uint64
 }
-
-func (HandshakeRequest) Type() MessageType { return MessageHandshakeRequest }
 
 // Validate checks the handshake request payload.
 func (m HandshakeRequest) Validate() error {
-	return m.Protocol.Validate()
+	if err := m.Protocol.Validate(); err != nil {
+		return err
+	}
+	return validateClusterID(m.ClusterID)
 }
 
 // Handshake is the hub's session advertisement. StorageProfile is fixed for
@@ -134,14 +69,13 @@ type Handshake struct {
 	PartitionCount  uint32
 	StorageProfile  wire.StorageProfile
 	DurableHealthy  bool
+	ClusterID       string
 }
-
-func (Handshake) Type() MessageType { return MessageHandshake }
 
 // Validate checks the hub handshake payload.
 func (m Handshake) Validate() error {
-	if !supportedVersion(m.ProtocolVersion) {
-		return fmt.Errorf("%w: %d", ErrUnsupportedVersion, m.ProtocolVersion)
+	if m.ProtocolVersion < wire.MinSupportedProtocolVersion || m.ProtocolVersion > wire.CurrentProtocolVersion {
+		return fmt.Errorf("%w: unsupported protocol version %d", wire.ErrIncompatibleProtocolRanges, m.ProtocolVersion)
 	}
 	if m.HubGeneration == 0 {
 		return ErrInvalidHubGeneration
@@ -155,6 +89,19 @@ func (m Handshake) Validate() error {
 	if m.StorageProfile == wire.StorageMemory && m.DurableHealthy {
 		return ErrInvalidDurableHealth
 	}
+	return validateClusterID(m.ClusterID)
+}
+
+// HubStatusRequest is a generation-scoped status probe.
+type HubStatusRequest struct {
+	HubGeneration uint64
+}
+
+// Validate checks the hub status request.
+func (m HubStatusRequest) Validate() error {
+	if m.HubGeneration == 0 {
+		return ErrInvalidHubGeneration
+	}
 	return nil
 }
 
@@ -163,47 +110,65 @@ type HubStatus struct {
 	HubGeneration  uint64
 	StorageProfile wire.StorageProfile
 	DurableHealthy bool
+	Status         wire.Status
 }
-
-func (HubStatus) Type() MessageType { return MessageHubStatus }
 
 // Validate checks the hub status payload.
 func (m HubStatus) Validate() error {
 	if m.HubGeneration == 0 {
 		return ErrInvalidHubGeneration
 	}
-	if !m.StorageProfile.Valid() {
-		return fmt.Errorf("%w: %d", wire.ErrInvalidStorageProfile, m.StorageProfile)
+	if !m.Status.Valid() {
+		return fmt.Errorf("%w: %s", ErrInvalidStatus, m.Status)
 	}
-	if m.StorageProfile == wire.StorageMemory && m.DurableHealthy {
-		return ErrInvalidDurableHealth
+	switch m.Status {
+	case wire.StatusOK:
+		if !m.StorageProfile.Valid() {
+			return fmt.Errorf("%w: %d", wire.ErrInvalidStorageProfile, m.StorageProfile)
+		}
+		if m.StorageProfile == wire.StorageMemory && m.DurableHealthy {
+			return ErrInvalidDurableHealth
+		}
+		return nil
+	case wire.StatusErrBadGeneration, wire.StatusErrInvalidArgument:
+		return nil
+	default:
+		return fmt.Errorf("%w: unexpected hub status %s", ErrInvalidStatus, m.Status)
 	}
-	return nil
 }
 
-// GetRequest is an authoritative read.
+// GetRequest is an authoritative read. HubGeneration is the node's adopted
+// generation and must be checked by the hub before lookup.
 type GetRequest struct {
-	Key        []byte
-	MinVersion *wire.VersionTag
+	Key           []byte
+	MinVersion    *wire.VersionTag
+	HubGeneration uint64
 }
-
-func (GetRequest) Type() MessageType { return MessageGetRequest }
 
 // Validate checks request bounds. Partition consistency for MinVersion is
 // checked by ValidateForPartitions once the hub partition count is known.
 func (m GetRequest) Validate() error {
+	if m.HubGeneration == 0 {
+		return ErrInvalidHubGeneration
+	}
 	return validateKey(m.Key)
 }
 
 // ValidateForPartitions checks key bounds and that MinVersion, when present,
 // routes to the same partition as Key.
 func (m GetRequest) ValidateForPartitions(partitionCount uint32) error {
+	if err := m.Validate(); err != nil {
+		return err
+	}
 	return wire.GetRequest{Key: m.Key, MinVersion: m.MinVersion}.Validate(partitionCount)
 }
 
 // Clone returns an ownership-independent copy of m.
 func (m GetRequest) Clone() GetRequest {
-	cloned := GetRequest{Key: wire.CopyBytes(m.Key)}
+	cloned := GetRequest{
+		Key:           wire.CopyBytes(m.Key),
+		HubGeneration: m.HubGeneration,
+	}
 	if m.MinVersion != nil {
 		version := *m.MinVersion
 		cloned.MinVersion = &version
@@ -223,8 +188,6 @@ type GetResponse struct {
 	TTLMillis     uint64
 	Kind          wire.RecordKind
 }
-
-func (GetResponse) Type() MessageType { return MessageGetResponse }
 
 // Validate checks the frozen authoritative-read response semantics.
 func (m GetResponse) Validate() error {
@@ -253,22 +216,25 @@ func (m GetResponse) Clone() GetResponse {
 
 // MutationRequest is an authoritative set or delete. Mode selects WriteFast or
 // WriteSync; W is peer confirmation and is independent of Mode.
+// HubGeneration is checked by the hub before any commit or sequence assignment.
 type MutationRequest struct {
-	Op         Op
-	Key        []byte
-	Value      []byte
-	TTLMillis  uint64
-	MutationID wire.MutationID
-	Mode       wire.WriteMode
-	W          uint16
-	Confirm    wire.ConfirmLevel
-	Timeout    uint32 // milliseconds; meaningful when W > 0
+	Op            Op
+	Key           []byte
+	Value         []byte
+	TTLMillis     uint64
+	MutationID    wire.MutationID
+	Mode          wire.WriteMode
+	W             uint16
+	Confirm       wire.ConfirmLevel
+	Timeout       uint32 // milliseconds; meaningful when W > 0
+	HubGeneration uint64
 }
-
-func (MutationRequest) Type() MessageType { return MessageMutationRequest }
 
 // Validate checks mutation bounds and write policy via the shared wire models.
 func (m MutationRequest) Validate() error {
+	if m.HubGeneration == 0 {
+		return ErrInvalidHubGeneration
+	}
 	if !m.Op.Valid() {
 		return fmt.Errorf("%w: %d", ErrInvalidOp, m.Op)
 	}
@@ -325,8 +291,6 @@ type MutationResponse struct {
 	Version       wire.VersionTag
 }
 
-func (MutationResponse) Type() MessageType { return MessageMutationResponse }
-
 // Validate checks mutation response semantics, including the committed-version
 // requirement for success and write-confirm timeout.
 func (m MutationResponse) Validate() error {
@@ -358,4 +322,11 @@ func validateKey(key []byte) error {
 	default:
 		return nil
 	}
+}
+
+func validateClusterID(id string) error {
+	if strings.TrimSpace(id) == "" {
+		return ErrInvalidClusterID
+	}
+	return nil
 }

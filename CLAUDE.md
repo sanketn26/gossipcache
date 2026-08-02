@@ -42,7 +42,7 @@ go mod tidy
   peer-confirmation `W` is independent of durability
 - Miss/write: point-to-point L2 RPC; singleflight on concurrent misses
 - Invalidations: L2 changefeed is the **sole publisher**; L1 peers consume mTLS
-  TCP streams with watermarks, replay, gap detection and anti-entropy
+  gRPC streams with watermarks, replay, gap detection and anti-entropy
 - Redis/Postgres authority and independent full-value gossip are out of scope for v1
 
 **Deployment Targets:**
@@ -56,7 +56,8 @@ go mod tidy
 - **L2 hub**: memory-first value/version authority with optional durability;
   version tag `(partition_id, sequence)` + `hub_generation`; changefeed sole
   invalidation publisher
-- **Control plane**: mTLS TCP streams; L2-only `stream_sequence`; application acks after apply; `StreamCheckpoint` freshness
+- **Control plane**: mTLS gRPC streams; L2-only `stream_sequence`; application acks after apply; `StreamCheckpoint` freshness
+- **Wire**: protobuf/gRPC (`api/proto`); no custom binary frames
 - **Anti-entropy**: held-key summaries vs L2 (hybrid)
 - **Observability**: readiness as consistency signal (gaps + freshness); H4 minimum metrics; P5 full suite
 
@@ -69,6 +70,6 @@ go mod tidy
 **Design Decisions:**
 
 1. L2-only invalidation publish (no dual publishers)
-2. TCP + app-level delivery guarantees (no custom RUDP for v1)
+2. gRPC + app-level delivery guarantees (no custom RUDP or private binary frames for v1)
 3. Eventual consistency with explicit stale-serve and reconciliation-before-ready
 4. Memory is the default Hub storage profile; durability is explicit and opt-in
